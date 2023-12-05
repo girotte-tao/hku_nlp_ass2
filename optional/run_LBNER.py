@@ -101,6 +101,7 @@ def readfile(filename, type_=None):
             #domain_l = eval(splits[2])
             
         else:
+            # if predict , the labels are all O
             splits = line.strip().split()
             sentence.append(splits[0])
             label.append('O')
