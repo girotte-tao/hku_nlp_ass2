@@ -5,6 +5,45 @@ from collections import Counter
 from torchtext.vocab import build_vocab_from_iterator
 from torchtext.data.utils import get_tokenizer
 import torch.optim as optim
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+import logging
+import os
+from datetime import datetime
+
+#  ----- log config -----
+log_dir = "log"
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+# 生成一个基于当前日期和时间的唯一文件名
+log_file_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".log"
+log_file_path = os.path.join(log_dir, log_file_name)
+
+# 配置日志记录器
+logging.basicConfig(filename=log_file_path, level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+def log_progress(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█'):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    logging.info(f'\r{prefix} |{bar}| {percent}% {suffix}')
+    # Print New Line on Complete
+    if iteration == total: 
+        logging.info()
+
 
 def load_data(file_path):
     sentences, tags = [], []
@@ -58,10 +97,12 @@ def build_vocab(data):
     counter = Counter()
     for sentence in data:
         counter.update(sentence)
-    return build_vocab_from_iterator([counter], specials=['<unk>', '<pad>'])
+    vocab = build_vocab_from_iterator([counter], specials=['<unk>', '<pad>'])
+    vocab.set_default_index(vocab['<unk>'])
+    return vocab
 
-word_vocab = build_vocab(train_sentences + valid_sentences)
-tag_vocab = build_vocab(train_tags + valid_tags)
+word_vocab = build_vocab(train_sentences)
+tag_vocab = build_vocab(train_tags)
 
 # Create datasets and data loaders
 train_dataset = NERDataset(train_sentences, train_tags, word_vocab, tag_vocab)
@@ -110,10 +151,14 @@ class TransformerModel(nn.Module):
 from tqdm import tqdm
 
 def train(model, train_loader, optimizer, criterion, device):
+    logging.info('TRAINING...')
     model.train()
     total_loss = 0.0
-    progress_bar = tqdm(train_loader, desc='Training', leave=False)
+    total = len(train_loader)
+    progress_bar = tqdm(train_loader, desc='Training', leave=True)
+
     for data, targets in progress_bar:
+    # for batch, (data, targets) in enumerate(train_loader, 1):
         data, targets = data.to(device), targets.to(device)
         optimizer.zero_grad()
         output = model(data)
@@ -121,6 +166,9 @@ def train(model, train_loader, optimizer, criterion, device):
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
+
+        # log_progress(batch, total, prefix='TRAINING Progress:', suffix='Complete', length=50)
+
     return total_loss / len(train_loader)
 
 # def train(model, train_loader, optimizer, criterion, device):
@@ -136,16 +184,43 @@ def train(model, train_loader, optimizer, criterion, device):
 #         total_loss += loss.item()
 #     return total_loss / len(train_loader)
 
-def evaluate(model, valid_loader, criterion, device):
+def evaluate(model, valid_loader, criterion, device, tag_vocab):
+    logging.info('EVALUATING...')
     model.eval()
     total_loss = 0.0
+    all_predictions = []
+    all_targets = []
+    
     with torch.no_grad():
-        for batch, (data, targets) in enumerate(valid_loader):
+        progress_bar = tqdm(valid_loader, desc='Validating', leave=True)
+        total = len(valid_loader)
+        for data, targets in progress_bar:
+        # for batch, (data, targets) in enumerate(train_loader, 1):
             data, targets = data.to(device), targets.to(device)
             output = model(data)
             loss = criterion(output.view(-1, output.shape[-1]), targets.view(-1))
             total_loss += loss.item()
-    return total_loss / len(valid_loader)
+
+            # Convert output probabilities to predicted labels
+            predictions = torch.argmax(output, dim=-1).view(-1)
+            targets = targets.view(-1)
+
+            # Mask out the padding tokens
+            mask = targets != tag_vocab.get_stoi()['<pad>']
+            predictions = predictions[mask]
+            targets = targets[mask]
+
+            all_predictions.extend(predictions.cpu().numpy())
+            all_targets.extend(targets.cpu().numpy())
+            # log_progress(batch, total, prefix='EVALUATING Progress:', suffix='Complete', length=50)
+
+
+    # Calculate metrics
+    accuracy = accuracy_score(all_targets, all_predictions)
+    precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_predictions, average='weighted')
+
+    return total_loss / len(valid_loader), accuracy, precision, recall, f1
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ntokens = len(word_vocab.get_stoi())  # 词汇表的大小
@@ -157,11 +232,11 @@ dropout = 0.1  # Dropout层的丢弃率
 ntag = len(tag_vocab.get_stoi())
 
 model = TransformerModel(ntokens, ntag, d_model, nhead, d_hid, nlayers, dropout).to(device)
-criterion = nn.CrossEntropyLoss(ignore_index=tag_vocab.get_stoi()['<pad>'])
+criterion = nn.CrossEntropyLoss(ignore_index=tag_vocab['<pad>'])
 optimizer = optim.Adam(model.parameters())
 
 # 训练模型
 for epoch in range(1, 11):
     train_loss = train(model, train_loader, optimizer, criterion, device)
-    val_loss = evaluate(model, valid_loader, criterion, device)
-    print(f"Epoch {epoch}, Train loss: {train_loss:.2f}, Validation loss: {val_loss:.2f}")
+    val_loss, accuracy, precision, recall, f1 = evaluate(model, valid_loader, criterion, device, tag_vocab)
+    print(f"Epoch {epoch}, Train loss: {train_loss:.2f}, Validation loss: {val_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
