@@ -228,19 +228,19 @@ def evaluate(model, valid_loader, criterion, device, tag_vocab):
             loss = criterion(output, targets)
             total_loss += loss.item()
 
-            logging.info("output[0]")
-            logging.info(output[0])
+            # logging.info("output[0]")
+            # logging.info(output[0])
 
-            logging.info("output[1]")
-            logging.info(output[1])
+            # logging.info("output[1]")
+            # logging.info(output[1])
 
             # Convert output probabilities to predicted labels
             # predictions = torch.argmax(output, dim=-1).view(-1)
             _, predicted = torch.max(output, dim=1)
 
-            logging.info("predicted")
+            # logging.info("predicted")
 
-            logging.info(predicted)
+            # logging.info(predicted)
 
             # Mask out the padding tokens
             # mask = targets != tag_vocab.get_stoi()['<pad>']
@@ -249,11 +249,11 @@ def evaluate(model, valid_loader, criterion, device, tag_vocab):
             mask = targets != tag_vocab['<pad>']
             filtered_predictions = predicted[mask]
             filtered_targets = targets[mask]
-            logging.info('filtered_predictions')
-            logging.info(filtered_predictions)
-            logging.info('filtered_targets')
-            logging.info(filtered_targets)
-            logging.info('--------------------')
+            # logging.info('filtered_predictions')
+            # logging.info(filtered_predictions)
+            # logging.info('filtered_targets')
+            # logging.info(filtered_targets)
+            # logging.info('--------------------')
             # print('filtered_predictions', filtered_predictions)
             # print('filtered_targets', filtered_targets)
             # print('--------------------')
@@ -299,7 +299,7 @@ optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE)
 
 # 训练模型
 
-EPOCH = 30
+EPOCH = 60
 def train_and_eval(epoch):
     for epoch in range(1, epoch+1):
         train_loss = train(model, train_loader, optimizer, criterion, device)
