@@ -74,17 +74,9 @@ word_vocab = build_vocab(sentences)
 label_vocab = build_vocab(labels)
 processed_data = process_data(sentences, labels, word_vocab, label_vocab)
 train_dataset = to_map_style_dataset(processed_data)
-
-# define hyperparameters
-# BATCH_SIZE = 64
-# LEARNING_RATE = 0.01
-# INPUT_DIM = len(word_vocab)
-# EMBEDDING_DIM = 100
-# HIDDEN_DIM = 256
-# OUTPUT_DIM = len(label_vocab)
-# NUM_LAYERS = 4
-# DROPOUT_RATE = 0.2
-
+valid_sentences, valid_labels = load_data("../conll2003/valid.txt")
+processed_valid_data = process_data(valid_sentences, valid_labels, word_vocab, label_vocab)
+valid_dataset = to_map_style_dataset(processed_valid_data)
 
 # define hyperparameters
 BATCH_SIZE = 64
@@ -95,6 +87,8 @@ HIDDEN_DIM = 256
 OUTPUT_DIM = len(label_vocab)
 NUM_LAYERS = 4
 DROPOUT_RATE = 0.2
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 logging.info(f'BATCH_SIZE {BATCH_SIZE}, HIDDEN_DIM {HIDDEN_DIM}, NUM_LAYERS {NUM_LAYERS}')
 logging.info(f'LEARNING_RATE {LEARNING_RATE}, DROPOUT_RATE {DROPOUT_RATE}')
@@ -102,6 +96,10 @@ logging.info(f'INPUT_DIM {INPUT_DIM}, OUTPUT_DIM {OUTPUT_DIM}')
 
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch)
+valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
+
+# DATASETS processes ENDs
+
 
 class LSTMTagger(nn.Module):
     def __init__(self, input_dim, embedding_dim, hidden_dim, output_dim, num_layers, dropout, bidirectional=False):
@@ -120,19 +118,11 @@ class LSTMTagger(nn.Module):
         return tag_scores
         # return predictions
 
-# whether bidirectional is set below
+# DEFINING MODEL
 model = LSTMTagger(INPUT_DIM, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, NUM_LAYERS, DROPOUT_RATE, bidirectional=True)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
-
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
-
-valid_sentences, valid_labels = load_data("../conll2003/valid.txt")
-processed_valid_data = process_data(valid_sentences, valid_labels, word_vocab, label_vocab)
-valid_dataset = to_map_style_dataset(processed_valid_data)
-
-valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
 
 def evaluate(model, iterator, criterion):
     model.eval()
@@ -150,7 +140,6 @@ def evaluate(model, iterator, criterion):
             loss = criterion(predictions, labels)
             total_loss += loss.item()
 
-            # 从logits中提取最可能的类别作为预测结果
             _, predicted = torch.max(predictions, dim=1)
 
             non_pad_elements = labels != label_vocab['<pad>']
@@ -159,10 +148,7 @@ def evaluate(model, iterator, criterion):
 
             all_predictions.extend(filtered_predictions.tolist())
             all_labels.extend(filtered_labels.tolist())
-            # 将预测和标签添加到列表中
-            # all_predictions.extend(predicted.tolist())
-            # all_labels.extend(labels.tolist())
-    # 计算评价指标
+
     eval_loss = total_loss / len(iterator)
     accuracy = accuracy_score(all_labels, all_predictions)
     precision = precision_score(all_labels, all_predictions, average='weighted')
