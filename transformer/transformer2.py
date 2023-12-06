@@ -7,6 +7,7 @@ from torchtext.data.utils import get_tokenizer
 import torch.optim as optim
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from torchtext.data.functional import to_map_style_dataset
 
 import logging
 import os
@@ -88,12 +89,18 @@ def collate_batch(batch):
     tag_list = pad_sequence(tag_list, padding_value=tag_vocab['<pad>'])
     return word_list, tag_list
 
+
+def process_data(sentences, labels, word_vocab, label_vocab):
+    processed_sentences = [torch.tensor([word_vocab[word] for word in sentence], dtype=torch.long) for sentence in sentences]
+    processed_labels = [torch.tensor([label_vocab[label] for label in label], dtype=torch.long) for label in labels]
+
+    return list(zip(processed_sentences, processed_labels))
+
 tokenizer = get_tokenizer('basic_english')
 
 # Load data
 train_sentences, train_tags = load_data('../conll2003/train.txt') # Replace with your train dataset path
 valid_sentences, valid_tags = load_data('../conll2003/valid.txt') # Replace with your valid dataset path
-
 # Build vocabularies
 def build_vocab(data_iter):
     specials = ['<unk>', '<pad>']
@@ -103,10 +110,14 @@ def build_vocab(data_iter):
 
 word_vocab = build_vocab(train_sentences)
 tag_vocab = build_vocab(train_tags)
+processed_data = process_data(train_sentences, train_tags, word_vocab, tag_vocab)
+train_dataset = to_map_style_dataset(processed_data)
 
+processed_valid_data = process_data(valid_sentences, valid_tags, word_vocab, tag_vocab)
+valid_dataset = to_map_style_dataset(processed_valid_data)
 # Create datasets and data loaders
-train_dataset = NERDataset(train_sentences, train_tags, word_vocab, tag_vocab)
-valid_dataset = NERDataset(valid_sentences, valid_tags, word_vocab, tag_vocab)
+# train_dataset = NERDataset(train_sentences, train_tags, word_vocab, tag_vocab)
+# valid_dataset = NERDataset(valid_sentences, valid_tags, word_vocab, tag_vocab)
 
 BTACH_SIZE = 64
 train_loader = DataLoader(train_dataset, batch_size=BTACH_SIZE, collate_fn=collate_batch, shuffle=True)
@@ -274,7 +285,7 @@ d_hid = 2048  # 前馈网络的维度
 nlayers = 6  # 编码器层的数量
 dropout = 0.05  # Dropout层的丢弃率
 ntag = len(tag_vocab)
-LEARNING_RATE = 5.0
+LEARNING_RATE = 0.1
 
 logging.info(f'device {device}')
 logging.info(f'ntokens {ntokens} ntag{ntag}')
