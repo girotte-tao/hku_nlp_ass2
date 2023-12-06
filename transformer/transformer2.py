@@ -6,6 +6,8 @@ from torchtext.vocab import build_vocab_from_iterator
 from torchtext.data.utils import get_tokenizer
 import torch.optim as optim
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
 import logging
 import os
 from datetime import datetime
@@ -76,14 +78,14 @@ class NERDataset(Dataset):
 
     def __getitem__(self, idx):
         return (
-            torch.tensor([self.word_vocab.get_stoi()[word] for word in self.sentences[idx]], dtype=torch.long),
-            torch.tensor([self.tag_vocab.get_stoi()[tag] for tag in self.tags[idx]], dtype=torch.long)
+            torch.tensor([self.word_vocab[word] for word in self.sentences[idx]], dtype=torch.long),
+            torch.tensor([self.tag_vocab[tag] for tag in self.tags[idx]], dtype=torch.long)
         )
 
 def collate_batch(batch):
     word_list, tag_list = zip(*batch)
-    word_list = pad_sequence(word_list, batch_first=True, padding_value=word_vocab['<pad>'])
-    tag_list = pad_sequence(tag_list, batch_first=True, padding_value=tag_vocab['<pad>'])
+    word_list = pad_sequence(word_list, padding_value=word_vocab['<pad>'])
+    tag_list = pad_sequence(tag_list, padding_value=tag_vocab['<pad>'])
     return word_list, tag_list
 
 tokenizer = get_tokenizer('basic_english')
@@ -93,11 +95,9 @@ train_sentences, train_tags = load_data('../conll2003/train.txt') # Replace with
 valid_sentences, valid_tags = load_data('../conll2003/valid.txt') # Replace with your valid dataset path
 
 # Build vocabularies
-def build_vocab(data):
-    counter = Counter()
-    for sentence in data:
-        counter.update(sentence)
-    vocab = build_vocab_from_iterator([counter], specials=['<unk>', '<pad>'])
+def build_vocab(data_iter):
+    specials = ['<unk>', '<pad>']
+    vocab = build_vocab_from_iterator(data_iter, specials=specials)
     vocab.set_default_index(vocab['<unk>'])
     return vocab
 
@@ -141,11 +141,23 @@ class TransformerModel(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, nlayers)
         self.linear = nn.Linear(d_model, ntag)
 
+    def init_weights(self) -> None:
+        initrange = 0.1
+        self.embedding.weight.data.uniform_(-initrange, initrange)
+        self.linear.bias.data.zero_()
+        self.linear.weight.data.uniform_(-initrange, initrange)
+
     def forward(self, src, src_mask=None):
         src = self.embedding(src) * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
+        if src_mask is None:
+            """Generate a square causal mask for the sequence. The masked positions are filled with float('-inf').
+            Unmasked positions are filled with float(0.0).
+            """
+            src_mask = nn.Transformer.generate_square_subsequent_mask(len(src)).to(device)
         output = self.transformer_encoder(src, src_mask)
         output = self.linear(output)
+        # tag_scores = torch.log_softmax(output, dim=2)
         return output
 
 from tqdm import tqdm
@@ -164,6 +176,7 @@ def train(model, train_loader, optimizer, criterion, device):
         output = model(data)
         loss = criterion(output.view(-1, output.shape[-1]), targets.view(-1))
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
         optimizer.step()
         total_loss += loss.item()
 
@@ -198,45 +211,95 @@ def evaluate(model, valid_loader, criterion, device, tag_vocab):
         # for batch, (data, targets) in enumerate(train_loader, 1):
             data, targets = data.to(device), targets.to(device)
             output = model(data)
-            loss = criterion(output.view(-1, output.shape[-1]), targets.view(-1))
-            total_loss += loss.item()
-
-            # Convert output probabilities to predicted labels
-            predictions = torch.argmax(output, dim=-1).view(-1)
+            output = output.view(-1, output.shape[-1])
             targets = targets.view(-1)
 
-            # Mask out the padding tokens
-            mask = targets != tag_vocab.get_stoi()['<pad>']
-            predictions = predictions[mask]
-            targets = targets[mask]
+            loss = criterion(output, targets)
+            total_loss += loss.item()
 
-            all_predictions.extend(predictions.cpu().numpy())
-            all_targets.extend(targets.cpu().numpy())
+            logging.info("output[0]")
+            logging.info(output[0])
+
+            logging.info("output[1]")
+            logging.info(output[1])
+
+            # Convert output probabilities to predicted labels
+            # predictions = torch.argmax(output, dim=-1).view(-1)
+            _, predicted = torch.max(output, dim=1)
+
+            logging.info("predicted")
+
+            logging.info(predicted)
+
+            # Mask out the padding tokens
+            # mask = targets != tag_vocab.get_stoi()['<pad>']
+            # predictions = predictions[mask]
+            # targets = targets[mask]
+            mask = targets != tag_vocab['<pad>']
+            filtered_predictions = predicted[mask]
+            filtered_targets = targets[mask]
+            logging.info('filtered_predictions')
+            logging.info(filtered_predictions)
+            logging.info('filtered_targets')
+            logging.info(filtered_targets)
+            logging.info('--------------------')
+            # print('filtered_predictions', filtered_predictions)
+            # print('filtered_targets', filtered_targets)
+            # print('--------------------')
+            # all_predictions.extend(predictions.cpu().numpy())
+            # all_targets.extend(targets.cpu().numpy())
+            all_predictions.extend(filtered_predictions.tolist())
+            all_targets.extend(filtered_targets.tolist())
             # log_progress(batch, total, prefix='EVALUATING Progress:', suffix='Complete', length=50)
 
 
     # Calculate metrics
+    # accuracy = accuracy_score(all_targets, all_predictions)
+    # precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_predictions, average='weighted')
+    eval_loss = total_loss / total
     accuracy = accuracy_score(all_targets, all_predictions)
-    precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_predictions, average='weighted')
+    precision = precision_score(all_targets, all_predictions, average='weighted')
+    recall = recall_score(all_targets, all_predictions, average='weighted')
+    f1 = f1_score(all_targets, all_predictions, average='weighted')
 
-    return total_loss / len(valid_loader), accuracy, precision, recall, f1
+    return eval_loss, accuracy, precision, recall, f1
+    # return total_loss / len(valid_loader), accuracy, precision, recall, f1
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ntokens = len(word_vocab.get_stoi())  # 词汇表的大小
+ntokens = len(word_vocab)  # 词汇表的大小
 d_model = 512  # 嵌入维度
 nhead = 8  # 多头注意力机制中的头数
 d_hid = 2048  # 前馈网络的维度
 nlayers = 6  # 编码器层的数量
-dropout = 0.1  # Dropout层的丢弃率
-ntag = len(tag_vocab.get_stoi())
+dropout = 0.05  # Dropout层的丢弃率
+ntag = len(tag_vocab)
+LEARNING_RATE = 5.0
+
+logging.info(f'device {device}')
+logging.info(f'ntokens {ntokens} ntag{ntag}')
+logging.info(f'd_model{d_model} nhead{nhead} d_hid{d_hid} nlayers{nlayers} dropout{dropout}')
+
+
 
 model = TransformerModel(ntokens, ntag, d_model, nhead, d_hid, nlayers, dropout).to(device)
 criterion = nn.CrossEntropyLoss(ignore_index=tag_vocab['<pad>'])
-optimizer = optim.Adam(model.parameters())
+optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE)
 
 # 训练模型
-for epoch in range(1, 11):
-    train_loss = train(model, train_loader, optimizer, criterion, device)
-    val_loss, accuracy, precision, recall, f1 = evaluate(model, valid_loader, criterion, device, tag_vocab)
-    print(f"Epoch {epoch}, Train loss: {train_loss:.2f}, Validation loss: {val_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
+
+EPOCH = 30
+def train_and_eval(epoch):
+    for epoch in range(1, epoch+1):
+        train_loss = train(model, train_loader, optimizer, criterion, device)
+        val_loss, accuracy, precision, recall, f1 = evaluate(model, valid_loader, criterion, device, tag_vocab)
+        print(f"Epoch {epoch}, Train loss: {train_loss:.2f}, Validation loss: {val_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
+        logging.info(f'Epoch: {epoch:02}')
+        logging.info(f'\tTrain Loss: {train_loss:.3f}')
+        logging.info(f'\t Eval Loss: {val_loss:.3f}')
+        logging.info(f'\t accuracy: {accuracy:.3f}')
+        logging.info(f'\t precision: {precision:.3f}')
+        logging.info(f'\t recall: {recall:.3f}')
+        logging.info(f'\t f1: {f1:.3f}')
+        
+train_and_eval(EPOCH)
