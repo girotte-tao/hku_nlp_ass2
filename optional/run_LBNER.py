@@ -45,7 +45,7 @@ from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-
+from sklearn.preprocessing import MultiLabelBinarizer
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
                     level = logging.INFO)
@@ -125,7 +125,7 @@ def readfile(filename, type_=None):
 
         # TODO
         if type_ != 'predict':
-            splits = line.split()
+            splits = line.strip().split()
             # print(splits)
             sentence.append(splits[0])
             label.append(splits[-1])
@@ -277,7 +277,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         if len(tokens) >= max_seq_length - 1:
             tokens, labels, valid, label_mask = truncate_sequences(tokens, labels, valid, label_mask, max_seq_length)
 
-        input_ids, segment_ids, input_mask, label_ids = build_bert_inputs(tokens, labels, label_map, max_seq_length, tokenizer)
+        input_ids, input_mask, segment_ids, label_ids, valid, label_mask = build_bert_inputs(tokens, labels, label_map, max_seq_length, tokenizer, valid, label_mask)
 
         features.append(
             InputFeatures(input_ids=input_ids,
@@ -320,7 +320,7 @@ def truncate_sequences(tokens, labels, valid, label_mask, max_seq_length):
     return tokens, labels, valid, label_mask
 
 
-def build_bert_inputs(tokens, labels, label_map, max_seq_length, tokenizer):
+def build_bert_inputs(tokens, labels, label_map, max_seq_length, tokenizer, valid, label_mask):
     def append_special_token(token, label):
         ntokens.append(token)
         segment_ids.append(0)
@@ -329,7 +329,7 @@ def build_bert_inputs(tokens, labels, label_map, max_seq_length, tokenizer):
         label_ids.append(label_map[label])
 
     ntokens, segment_ids, label_ids = [], [], []
-    valid, label_mask = [], []
+    # valid, label_mask = [], []
 
     append_special_token("[CLS]", "[CLS]")
 
@@ -344,15 +344,18 @@ def build_bert_inputs(tokens, labels, label_map, max_seq_length, tokenizer):
     input_ids = tokenizer.convert_tokens_to_ids(ntokens)
     input_mask = [1] * len(input_ids)
 
-    pad_sequences([input_ids, input_mask, segment_ids, label_ids, valid, label_mask], max_seq_length)
+    padded_sequences = pad_sequences([input_ids, input_mask, segment_ids, label_ids, valid, label_mask], max_seq_length)
 
-    return input_ids, segment_ids, input_mask, label_ids
+    return padded_sequences
 
 def pad_sequences(sequences, max_seq_length):
     """将序列填充到最大长度"""
+    padded_sequences = []
     for sequence in sequences:
         while len(sequence) < max_seq_length:
             sequence.append(0)
+        padded_sequences.append(sequence)
+    return padded_sequences
 
 
 # load dataset
@@ -378,48 +381,60 @@ def pad_sequences(sequences, max_seq_length):
 # bert dropout use_bilstm windows_list d_model num_labels
 
 
-def get_label_list():
+def get_label_list(train_data_dir, test_data_dir, dev_data_dir):
     label_set = readfile_label(train_data_dir, test_data_dir, dev_data_dir)
     label_list = []
     label_list.append('O')
     label_list.extend(list(label_set))
+    label_list.append("[CLS]")
+    label_list.append("[SEP]")
     return label_list
 
-def create_tensors(features, attribute_names):
+def create_tensors(features):
     """创建并返回给定特征属性的张量"""
-    return [torch.tensor([getattr(f, attr) for f in features], dtype=torch.long) for attr in attribute_names]
+    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+    all_input_mask = torch.tensor([f.input_mask for f in features], dtype=torch.long)
+    all_segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
+    all_label_ids = torch.tensor([f.label_id for f in features], dtype=torch.long)
+    all_valid_ids = torch.tensor([f.valid_ids for f in features], dtype=torch.long)
+    all_lmask_ids = torch.tensor([f.label_mask for f in features], dtype=torch.long)
+    all_seq_lens = torch.tensor([f.seq_len for f in features], dtype=torch.long)
+    return all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids, all_seq_lens
 
-label_list = get_label_list()
+train_data_dir = "../conll2003/train.txt"
+dev_data_dir = "../conll2003/valid.txt"
+test_data_dir = "../conll2003/test.txt"
+label_list = get_label_list(train_data_dir, test_data_dir, dev_data_dir)
 num_labels = len(label_list) + 1
 bert_model = 'bert-base-uncased'
+# bert_model = 'xlnet-large-cased'
 tokenizer = AutoTokenizer.from_pretrained(bert_model, do_lower_case=False)
-d_model = 1024
+d_model = 768
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 dropout=0.1
 windows_list=[1, 3, 5, 7]
 use_bilstm=True
 
 model = LBNER(bert_model=bert_model, d_model=d_model, num_labels=num_labels,
-              device=device, dropout=0.1, windows_list=windows_list, use_bilstm=use_bilstm)
+              device=device, dropout=0.1, windows_list=windows_list, use_bilstm=use_bilstm).to(device)
 
-train_data_dir = "../conll2003/train.txt"
-dev_data_dir = "../conll2003/valid.txt"
-test_data_dir = "../conll2003/test.txt"
+
 
 max_seq_length=128
-batch_size = 64
-attributes = ["input_ids", "input_mask", "segment_ids", "label_id", "valid_ids", "label_mask", "seq_len"]
+batch_size = 10
+# attributes = ["input_ids", "input_mask", "segment_ids", "label_id", "valid_ids", "label_mask", "seq_len"]
 
+ner_processor = NerProcessor()
 
-train_examples = NerProcessor.get_train_examples(train_data_dir)
+train_examples = ner_processor.get_train_examples(train_data_dir)
 train_features,_ = convert_examples_to_features(train_examples, label_list, max_seq_length, tokenizer)
-all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids, all_seq_lens = create_tensors(train_features, attributes)
+all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids, all_seq_lens = create_tensors(train_features)
 train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids,
                            all_seq_lens)
 
-eval_examples = NerProcessor.get_train_examples(dev_data_dir)
+eval_examples = ner_processor.get_dev_examples(dev_data_dir)
 eval_features, _ = convert_examples_to_features(eval_examples, label_list, max_seq_length, tokenizer)
-all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids, all_seq_lens = create_tensors(eval_features, attributes)
+all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids, all_seq_lens = create_tensors(eval_features)
 eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids,
                           all_seq_lens)
 
@@ -453,14 +468,11 @@ def get_loss(criterion, labels, attention_mask_label, logits, num_labels):
     else:
         loss = criterion(logits.view(-1, num_labels), labels.view(-1))
     return loss
-def train(model, data_loader, optimizer, criterion, max_grad_norm, num_labels):
-    test_f1 = []
-    dev_f1 = []
-
+def train(model, data_loader, optimizer, criterion, max_grad_norm, num_labels, epoch_):
+    logging.info('TRAINING')
     model.train()
     total_train_loss = 0
-    nb_tr_examples, nb_tr_steps = 0, 0
-    for step, batch in enumerate(tqdm(data_loader, desc="Iteration")):
+    for step, batch in enumerate(tqdm(data_loader, desc="TRAINING")):
         optimizer.zero_grad()
         batch = tuple(t.to(device) for t in batch)
         input_ids, input_mask, segment_ids, label_ids, valid_ids, l_mask, seq_len = batch
@@ -476,7 +488,7 @@ def train(model, data_loader, optimizer, criterion, max_grad_norm, num_labels):
         total_train_loss += loss.item()
 
     train_loss = total_train_loss / len(data_loader)
-    logging.info(f'Epoch: {epoch_+1:02}')
+
     logging.info(f'\tTrain Loss: {train_loss:.3f}')
     # logging.info(f'\t Eval Loss: {eval_loss:.3f}')
     # logging.info(f'\t accuracy: {accuracy:.3f}')
@@ -484,11 +496,15 @@ def train(model, data_loader, optimizer, criterion, max_grad_norm, num_labels):
     # logging.info(f'\t recall: {recall:.3f}')
     # logging.info(f'\t f1: {f1:.3f}')
 
-def evaluate(EPOCH, model, data_loader, optimizer, criterion, max_grad_norm, num_labels, label_list):
-    f1 = []
+def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels, label_list, epoch_):
+    total_loss = 0.0
+    logging.info("EVALUATING")
+    f1_list = []
     model.eval()
     y_true = []
     y_pred = []
+    # y_true_ids = []
+    # y_pred_ids = []
     label_map = {i: label for i, label in enumerate(label_list, 1)}
     for step, batch in enumerate(tqdm(data_loader, desc="Evaluation")):
         input_ids, input_mask, segment_ids, label_ids, valid_ids, l_mask, seq_len = batch
@@ -501,38 +517,86 @@ def evaluate(EPOCH, model, data_loader, optimizer, criterion, max_grad_norm, num
         seq_len = seq_len.to(device)
         with torch.no_grad():
             logits = model(input_ids, segment_ids, input_mask, valid_ids=valid_ids)
+            loss = get_loss(criterion, label_ids, l_mask, logits, num_labels)
+            total_loss += loss.item()
+        logits = torch.argmax(F.log_softmax(logits, dim=2), dim=2)
         logits = logits.detach().cpu().numpy()
         label_ids = label_ids.to('cpu').numpy()
+        # print('logits',logits.shape)
+        # print(logits)
+        # print('logits[0]', logits[0])
+        # print('logits[1]', logits[1])
+
+        # print('label_ids', label_ids.shape)
+        # print(label_ids)
+        # print('label_ids[0]', label_ids[0])
+        # print('label_ids[1]', label_ids[1])
+
         for i, label in enumerate(label_ids):
+            print()
             temp_1 = []
             temp_2 = []
-            for j, m in enumerate(label):
+            # temp_3 = []
+            # temp_4 = []
+            for j,m in enumerate(label):
                 if j == 0:
                     continue
                 elif label_ids[i][j] == len(label_map):
                     y_true.append(temp_1)
+                    # y_true_ids.append(temp_3)
                     y_pred.append(temp_2)
+                    # y_pred_ids.append(temp_4)
                     break
                 else:
 
                     temp_1.append(label_map[label_ids[i][j]])
+                    # temp_3.append(label_ids[i][j])
                     try:
                         temp_2.append(label_map[logits[i][j]])
+                        # temp_4.append(logits[i][j])
                     except:
                         temp_2.append('O')
-        report = classification_report(y_true, y_pred, digits=4)
-        logger.info("\n******evaluate on the dev data*******")
-        logger.info("\n%s", report)
-        temp = report.split('\n')[-3]
-        f_eval = eval(temp.split()[-2])
-        f1.append(f_eval)
-        logging.info("eval report")
-        logging.info(report)
+                        # temp_4.append(0)
+    print('y_true', y_true)
+    print('y_pred', y_pred)
+    mlb = MultiLabelBinarizer()
+    y_true_binary = mlb.fit_transform(y_true)
+    y_pred_binary = mlb.transform(y_pred)
 
-        output_eval_file = "eval_results.txt"
-        with open(output_eval_file, "a") as writer:
-            writer.write('*******************epoch*******' + str(epoch_) + '\n')
-            writer.write(report + '\n')
+    eval_loss = total_loss / len(data_loader)
+    accuracy = accuracy_score(y_true_binary, y_pred_binary)
+    precision = precision_score(y_true_binary, y_pred_binary, average='weighted')
+    recall = recall_score(y_true_binary, y_pred_binary, average='weighted')
+    f1 = f1_score(y_true_binary, y_pred_binary, average='weighted')
+    print(f"Epoch {epoch_}, Validation loss: {eval_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
+
+    report = classification_report(y_true, y_pred, digits=4)
+    logger.info("\n******evaluate on the dev data*******")
+    logger.info("\n%s", report)
+    print("report")
+    print(report)
+    temp = report.split('\n')[-3]
+    f_eval = eval(temp.split()[-2])
+    f1_list.append(f_eval)
+
+    logging.info(f'\t Eval Loss: {eval_loss:.3f}')
+    logging.info(f'\t accuracy: {accuracy:.3f}')
+    logging.info(f'\t precision: {precision:.3f}')
+    logging.info(f'\t recall: {recall:.3f}')
+    logging.info(f'\t f1: {f1:.3f}')
+
+    logging.info("eval report")
+    logging.info(report)
+
+    output_eval_file = "eval_results.txt"
+    with open(output_eval_file, "a") as writer:
+        writer.write('*******************epoch*******' + str(epoch_) + '\n')
+        writer.write(f'\t Eval Loss: {eval_loss:.3f}' + '\n')
+        writer.write(f'\t accuracy: {accuracy:.3f}' + '\n')
+        writer.write(f'\t precision: {precision:.3f}' + '\n')
+        writer.write(f'\t recall: {recall:.3f}' + '\n')
+        writer.write(f'\t f1: {f1:.3f}' + '\n')
+        writer.write(report + '\n')
 
 
 # def train_and_eval(EPOCH):
@@ -545,6 +609,7 @@ def evaluate(EPOCH, model, data_loader, optimizer, criterion, max_grad_norm, num
 
 if __name__ == "__main__":
     for epoch_ in trange(EPOCH, desc="Epoch"):
-        train(model, train_dataloader, optimizer, criterion, max_grad_norm, num_labels)
-        evaluate(EPOCH, model, eval_dataloader, optimizer, criterion, max_grad_norm, num_labels, label_list)
+        logging.info(f'Epoch: {epoch_+1:02}')
+        train(model, train_dataloader, optimizer, criterion, max_grad_norm, num_labels, epoch_)
+        evaluate(model, eval_dataloader, optimizer, criterion, max_grad_norm, num_labels, label_list, epoch_)
 

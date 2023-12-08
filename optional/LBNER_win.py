@@ -67,35 +67,35 @@ processed_valid_data = process_data(valid_sentences, valid_labels, word_vocab, l
 valid_dataset = to_map_style_dataset(processed_valid_data)
 
 
-# class BiLSTM(nn.Module):
-#     def __init__(self, hidden_size):
-#         super(BiLSTM, self).__init__()
-#         # self.setup_seed(seed)
-#         self.forward_lstm = nn.LSTM(hidden_size, hidden_size // 2, num_layers=1, bidirectional=False, batch_first=True)
-#         self.backward_lstm = nn.LSTM(hidden_size, hidden_size // 2, num_layers=1, bidirectional=False, batch_first=True)
-#
-#     def forward(self, x):
-#         batch_size, max_len, feat_dim = x.shape
-#         out1, _ = self.forward_lstm(x)
-#         reverse_x = torch.zeros([batch_size, max_len, feat_dim], dtype=torch.float32, device='cuda')
-#         for i in range(max_len):
-#             reverse_x[:, i, :] = x[:, max_len - 1 - i, :]
-#
-#         out2, _ = self.backward_lstm(reverse_x)
-#
-#         output = torch.cat((out1, out2), 2)
-#         return output, (1, 1)
-#
 class BiLSTM(nn.Module):
     def __init__(self, hidden_size):
         super(BiLSTM, self).__init__()
-        # Create a bidirectional LSTM
-        self.bilstm = nn.LSTM(hidden_size, hidden_size // 2, num_layers=1, bidirectional=True, batch_first=True)
+        # self.setup_seed(seed)
+        self.forward_lstm = nn.LSTM(hidden_size, hidden_size // 2, num_layers=1, bidirectional=False, batch_first=True)
+        self.backward_lstm = nn.LSTM(hidden_size, hidden_size // 2, num_layers=1, bidirectional=False, batch_first=True)
 
     def forward(self, x):
-        # Pass the input through the bidirectional LSTM
-        output, _ = self.bilstm(x)
+        batch_size, max_len, feat_dim = x.shape
+        out1, _ = self.forward_lstm(x)
+        reverse_x = torch.zeros([batch_size, max_len, feat_dim], dtype=torch.float32, device='cuda')
+        for i in range(max_len):
+            reverse_x[:, i, :] = x[:, max_len - 1 - i, :]
+
+        out2, _ = self.backward_lstm(reverse_x)
+
+        output = torch.cat((out1, out2), 2)
         return output, (1, 1)
+
+# class BiLSTM(nn.Module):
+#     def __init__(self, hidden_size):
+#         super(BiLSTM, self).__init__()
+#         # Create a bidirectional LSTM
+#         self.bilstm = nn.LSTM(hidden_size, hidden_size // 2, num_layers=1, bidirectional=True, batch_first=True)
+
+#     def forward(self, x):
+#         # Pass the input through the bidirectional LSTM
+#         output, _ = self.bilstm(x)
+#         return output, (1, 1)
 
 # bert dropout use_bilstm windows_list d_model num_labels
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -109,13 +109,12 @@ class LBNER(nn.Module):
         self.use_bilstm = use_bilstm
         self.windows_list = windows_list
         self.d_model = d_model
-        self.num_labels = num_labels
         self.linear = nn.Linear(self.d_model, self.num_labels)
         self.device = device
 
         if self.windows_list != None:
             if self.use_bilstm:
-                self.bilstm_s = nn.ModuleList([BiLSTM(self.d_model) for _ in self.windows_list])
+                self.bilstm_layers = nn.ModuleList([BiLSTM(self.d_model) for _ in self.windows_list])
             else:
                 self.bilstm_layers = nn.ModuleList(
                     [nn.LSTM(self.d_model, self.d_model, num_layers=1, bidirectional=False, batch_first=True) for _ in
@@ -123,7 +122,9 @@ class LBNER(nn.Module):
 
 
     def windows_sequence(self, sequence_output, windows, lstm_layer):
+        # print("windows,", windows)
         batch_size, max_len, feat_dim = sequence_output.shape
+        # print("windows_sequence: batch_size, max_len, feat_dim", batch_size, max_len, feat_dim)
         local_final = torch.zeros([batch_size, max_len, feat_dim], dtype=torch.float32, device=self.device)
         for i in range(max_len):
             index_list = []
@@ -134,10 +135,16 @@ class LBNER(nn.Module):
                     index_list.append(i + u)
             index_list.append(i)
             index_list.sort()
+            # print("index_list",index_list)
             temp = sequence_output[:, index_list, :]
+            # print('temp', temp.shape)
+            # print('lstm', lstm_layer)
             out, (h, b) = lstm_layer(temp)
             local_f = out[:, -1, :]
             local_final[:, i, :] = local_f
+        # print("local_final", local_final)
+        # print("local_final size", local_final.shape)
+
         return local_final
 
     # bert dropout use_bilstm windows_list d_model num_labels
@@ -145,33 +152,42 @@ class LBNER(nn.Module):
     # def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None, valid_ids=None,
     #             attention_mask_label=None):
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, valid_ids=None):
+        # print("input_ids", input_ids.shape)
+        # print("token_type_ids", token_type_ids.shape)
+        # print("attention_mask", attention_mask.shape)
+        # print("valid_ids", valid_ids.shape)
+
         sequence_output = \
         self.bert(input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask, head_mask=None)[0]
+        # print("sequence_output", sequence_output.shape)
         batch_size, max_len, feat_dim = sequence_output.shape
-        # valid_output = torch.zeros(batch_size, max_len, feat_dim, dtype=torch.float32, device=self.device)
+        # print('batch_size, max_len, feat_dim', batch_size, max_len, feat_dim)
+        valid_output = torch.zeros(batch_size, max_len, feat_dim, dtype=torch.float32, device=self.device)
 
-        # for i in range(batch_size):
-        #     jj = -1
-        #     for j in range(max_len):
-        #         if valid_ids[i][j].item() == 1:
-        #             jj += 1
-        #             valid_output[i][jj] = sequence_output[i][j]
-        valid_output = torch.stack([sequence_output[i][valid_ids[i].bool()] for i in range(batch_size)])
+        for i in range(batch_size):
+            jj = -1
+            for j in range(max_len):
+                if valid_ids[i][j].item() == 1:
+                    jj += 1
+                    valid_output[i][jj] = sequence_output[i][j]
+        # valid_output = torch.stack([sequence_output[i][valid_ids[i].bool()] for i in range(batch_size)])
 
         sequence_output = self.dropout(valid_output)
 
-        # mutiple_windows = []
+        # print("sequence_output_afterwards", sequence_output.shape)
+        # print("valid_output", valid_output.shape)
+        mutiple_windows = []
 
-        mutiple_windows = [
-            self.windows_sequence(sequence_output, window, self.bilstm_layers[i])
-            for i, window in enumerate(self.windows_list)
-            if self.use_bilstm
-        ]
+        # mutiple_windows = [
+        #     self.windows_sequence(sequence_output, window, self.bilstm_layers[i])
+        #     for i, window in enumerate(self.windows_list)
+        #     if self.use_bilstm
+        # ]
 
-        # for i, window in enumerate(self.windows_list):
-        #     if self.use_bilstm:
-        #         local_final = self.windows_sequence(sequence_output, window, self.bilstm_layers[i])
-        #     mutiple_windows.append(local_final)
+        for i, window in enumerate(self.windows_list):
+            if self.use_bilstm:
+                local_final = self.windows_sequence(sequence_output, window, self.bilstm_layers[i])
+                mutiple_windows.append(local_final)
 
         muti_local_features = torch.stack(mutiple_windows, dim=2)
         sequence_output = sequence_output.unsqueeze(dim=2)
