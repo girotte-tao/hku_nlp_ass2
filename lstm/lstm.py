@@ -62,13 +62,6 @@ def process_data(sentences, labels, word_vocab, label_vocab):
     return list(zip(processed_sentences, processed_labels))
 
 
-def collate_batch(batch):
-    text_list, label_list = zip(*batch)
-    text_list = pad_sequence(text_list, padding_value=word_vocab['<pad>'])
-    label_list = pad_sequence(label_list, padding_value=label_vocab['<pad>'])
-    return text_list, label_list
-
-
 # the LSTM model
 class LSTMTagger(nn.Module):
     def __init__(self, input_dim, embedding_dim, hidden_dim, output_dim, num_layers, dropout, bidirectional=False):
@@ -89,7 +82,7 @@ class LSTMTagger(nn.Module):
         # return predictions
 
 
-def evaluate(model, iterator, criterion):
+def evaluate(model, iterator, criterion, device, label_vocab):
     model.eval()
     total_loss = 0
     all_predictions = []
@@ -145,11 +138,11 @@ def train(model, train_loader, optimizer, criterion, device):
     return train_loss
 
 
-def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, n_epochs, device):
+def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, n_epochs, device, label_vocab):
     eval_loss, accuracy, precision, recall, f1 = -1, -1, -1, -1, -1
     for epoch in range(n_epochs):
         train_loss = train(model, train_loader, optimizer, criterion, device)
-        eval_loss, accuracy, precision, recall, f1 = evaluate(model, valid_loader, criterion)
+        eval_loss, accuracy, precision, recall, f1 = evaluate(model, valid_loader, criterion, device, label_vocab)
 
         logging.info(f'Epoch: {epoch + 1:02}')
         logging.info(f'\tTrain Loss: {train_loss:.3f}')
@@ -185,6 +178,12 @@ def objective(trial):
     logging.info(f'LEARNING_RATE {LEARNING_RATE}, DROPOUT_RATE {DROPOUT_RATE}')
     logging.info(f'INPUT_DIM {INPUT_DIM}, OUTPUT_DIM {OUTPUT_DIM}')
 
+    def collate_batch(batch):
+        text_list, label_list = zip(*batch)
+        text_list = pad_sequence(text_list, padding_value=word_vocab['<pad>'])
+        label_list = pad_sequence(label_list, padding_value=label_vocab['<pad>'])
+        return text_list, label_list
+
     train_loader = DataLoader(to_map_style_dataset(process_data(sentences, labels, word_vocab, label_vocab)),
                               batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch)
     valid_loader = DataLoader(
@@ -198,7 +197,7 @@ def objective(trial):
     criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
 
     N_EPOCHS = 50
-    f1 = train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, N_EPOCHS, device)
+    f1 = train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, N_EPOCHS, device, label_vocab)
     return f1
 
 
@@ -235,6 +234,12 @@ def main():
     logging.info(f'LEARNING_RATE {LEARNING_RATE}, DROPOUT_RATE {DROPOUT_RATE}')
     logging.info(f'INPUT_DIM {INPUT_DIM}, OUTPUT_DIM {OUTPUT_DIM}')
 
+    def collate_batch(batch):
+        text_list, label_list = zip(*batch)
+        text_list = pad_sequence(text_list, padding_value=word_vocab['<pad>'])
+        label_list = pad_sequence(label_list, padding_value=label_vocab['<pad>'])
+        return text_list, label_list
+
     train_loader = DataLoader(to_map_style_dataset(process_data(sentences, labels, word_vocab, label_vocab)),
                               batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch)
     valid_loader = DataLoader(
@@ -248,7 +253,7 @@ def main():
     criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
 
     N_EPOCHS = 50
-    train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, N_EPOCHS, device)
+    train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, N_EPOCHS, device, label_vocab)
 
 
 if __name__ == "__main__":
