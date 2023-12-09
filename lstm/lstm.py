@@ -5,10 +5,10 @@ from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-
 import logging
 import os
 from datetime import datetime
+import optuna
 
 #  ----- log config -----
 log_dir = "log"
@@ -146,6 +146,7 @@ def train(model, train_loader, optimizer, criterion, device):
 
 
 def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, n_epochs, device):
+    eval_loss, accuracy, precision, recall, f1 = -1, -1, -1, -1, -1
     for epoch in range(n_epochs):
         train_loss = train(model, train_loader, optimizer, criterion, device)
         eval_loss, accuracy, precision, recall, f1 = evaluate(model, valid_loader, criterion)
@@ -157,18 +158,67 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
         logging.info(f'\t precision: {precision:.3f}')
         logging.info(f'\t recall: {recall:.3f}')
         logging.info(f'\t f1: {f1:.3f}')
+    return f1
 
 
-if __name__ == "__main__":
+# trial to find the best parameters
+
+def objective(trial):
     # load dataset
     sentences, labels = load_data("../conll2003/train.txt")
     word_vocab = build_vocab(sentences)
     label_vocab = build_vocab(labels)
-    processed_data = process_data(sentences, labels, word_vocab, label_vocab)
-    train_dataset = to_map_style_dataset(processed_data)
     valid_sentences, valid_labels = load_data("../conll2003/valid.txt")
-    processed_valid_data = process_data(valid_sentences, valid_labels, word_vocab, label_vocab)
-    valid_dataset = to_map_style_dataset(processed_valid_data)
+
+    # define hyperparameters
+    BATCH_SIZE = trial.suggest_categorical("batch_size", [16, 32, 64, 128])
+    LEARNING_RATE = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
+    INPUT_DIM = len(word_vocab)
+    EMBEDDING_DIM = trial.suggest_int("embedding_dim", 50, 300)
+    HIDDEN_DIM = trial.suggest_int("hidden_dim", 100, 500)
+    OUTPUT_DIM = len(label_vocab)
+    NUM_LAYERS = trial.suggest_int("num_layers", 1, 6)
+    DROPOUT_RATE = trial.suggest_float("dropout_rate", 0.1, 0.5)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    logging.info(f'BATCH_SIZE {BATCH_SIZE}, HIDDEN_DIM {HIDDEN_DIM}, NUM_LAYERS {NUM_LAYERS}')
+    logging.info(f'LEARNING_RATE {LEARNING_RATE}, DROPOUT_RATE {DROPOUT_RATE}')
+    logging.info(f'INPUT_DIM {INPUT_DIM}, OUTPUT_DIM {OUTPUT_DIM}')
+
+    train_loader = DataLoader(to_map_style_dataset(process_data(sentences, labels, word_vocab, label_vocab)),
+                              batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch)
+    valid_loader = DataLoader(
+        to_map_style_dataset(process_data(valid_sentences, valid_labels, word_vocab, label_vocab)),
+        batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
+
+    # DEFINING MODEL
+    model = LSTMTagger(INPUT_DIM, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, NUM_LAYERS, DROPOUT_RATE,
+                       bidirectional=True).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
+
+    N_EPOCHS = 50
+    f1 = train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, N_EPOCHS, device)
+    return f1
+
+
+def print_trial_info(study, trial):
+    # 打印每次 trial 完成时的信息
+    print(f"Trial {trial.number} finished with value: {trial.value} and parameters: {trial.params}.")
+    print(f"Best trial so far: Trial {study.best_trial.number}")
+
+
+def build_model(INPUT_DIM, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, NUM_LAYERS, DROPOUT_RATE, bidirectional):
+    model = LSTMTagger(INPUT_DIM, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, NUM_LAYERS, DROPOUT_RATE, bidirectional)
+    return model
+
+
+def main():
+    # load dataset
+    sentences, labels = load_data("../conll2003/train.txt")
+    word_vocab = build_vocab(sentences)
+    label_vocab = build_vocab(labels)
+    valid_sentences, valid_labels = load_data("../conll2003/valid.txt")
 
     # define hyperparameters
     BATCH_SIZE = 64
@@ -185,14 +235,29 @@ if __name__ == "__main__":
     logging.info(f'LEARNING_RATE {LEARNING_RATE}, DROPOUT_RATE {DROPOUT_RATE}')
     logging.info(f'INPUT_DIM {INPUT_DIM}, OUTPUT_DIM {OUTPUT_DIM}')
 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch)
-    valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
+    train_loader = DataLoader(to_map_style_dataset(process_data(sentences, labels, word_vocab, label_vocab)),
+                              batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch)
+    valid_loader = DataLoader(
+        to_map_style_dataset(process_data(valid_sentences, valid_labels, word_vocab, label_vocab)),
+        batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
 
     # DEFINING MODEL
-    model = LSTMTagger(INPUT_DIM, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, NUM_LAYERS, DROPOUT_RATE, bidirectional=True)
-    model.to(device)
+    model = LSTMTagger(INPUT_DIM, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, NUM_LAYERS, DROPOUT_RATE,
+                       bidirectional=True).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
 
     N_EPOCHS = 50
     train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, N_EPOCHS, device)
+
+
+if __name__ == "__main__":
+    do_trial = False
+    if do_trial:
+        logging.info('DO TRIAL...')
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=20, callbacks=[print_trial_info])
+
+        print(study.best_params)
+    else:
+        main()
