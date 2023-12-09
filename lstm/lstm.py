@@ -205,6 +205,8 @@ def print_trial_info(study, trial):
     # 打印每次 trial 完成时的信息
     print(f"Trial {trial.number} finished with value: {trial.value} and parameters: {trial.params}.")
     print(f"Best trial so far: Trial {study.best_trial.number}")
+    logging.info(f"Trial {trial.number} finished with value: {trial.value} and parameters: {trial.params}.")
+    logging.info(f"Best trial so far: Trial {study.best_trial.number}")
 
 
 def build_model(INPUT_DIM, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, NUM_LAYERS, DROPOUT_RATE, bidirectional):
