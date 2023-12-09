@@ -1,14 +1,11 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
-from collections import Counter
 from torchtext.vocab import build_vocab_from_iterator
 from torchtext.data.utils import get_tokenizer
 import torch.optim as optim
-from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from torchtext.data.functional import to_map_style_dataset
-
 import logging
 import os
 from datetime import datetime
@@ -25,6 +22,7 @@ log_file_path = os.path.join(log_dir, log_file_name)
 # 配置日志记录器
 logging.basicConfig(filename=log_file_path, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def log_progress(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█'):
     """
@@ -44,7 +42,7 @@ def log_progress(iteration, total, prefix='', suffix='', decimals=1, length=50, 
     bar = fill * filledLength + '-' * (length - filledLength)
     logging.info(f'\r{prefix} |{bar}| {percent}% {suffix}')
     # Print New Line on Complete
-    if iteration == total: 
+    if iteration == total:
         logging.info()
 
 
@@ -67,6 +65,7 @@ def load_data(file_path):
             tags.append(tag)
     return sentences, tags
 
+
 class NERDataset(Dataset):
     def __init__(self, sentences, tags, word_vocab, tag_vocab):
         self.sentences = sentences
@@ -83,6 +82,7 @@ class NERDataset(Dataset):
             torch.tensor([self.tag_vocab[tag] for tag in self.tags[idx]], dtype=torch.long)
         )
 
+
 def collate_batch(batch):
     word_list, tag_list = zip(*batch)
     word_list = pad_sequence(word_list, padding_value=word_vocab['<pad>'])
@@ -91,22 +91,27 @@ def collate_batch(batch):
 
 
 def process_data(sentences, labels, word_vocab, label_vocab):
-    processed_sentences = [torch.tensor([word_vocab[word] for word in sentence], dtype=torch.long) for sentence in sentences]
+    processed_sentences = [torch.tensor([word_vocab[word] for word in sentence], dtype=torch.long) for sentence in
+                           sentences]
     processed_labels = [torch.tensor([label_vocab[label] for label in label], dtype=torch.long) for label in labels]
 
     return list(zip(processed_sentences, processed_labels))
 
+
 tokenizer = get_tokenizer('basic_english')
 
 # Load data
-train_sentences, train_tags = load_data('../conll2003/train.txt') # Replace with your train dataset path
-valid_sentences, valid_tags = load_data('../conll2003/valid.txt') # Replace with your valid dataset path
+train_sentences, train_tags = load_data('../conll2003/train.txt')  # Replace with your train dataset path
+valid_sentences, valid_tags = load_data('../conll2003/valid.txt')  # Replace with your valid dataset path
+
+
 # Build vocabularies
 def build_vocab(data_iter):
     specials = ['<unk>', '<pad>']
     vocab = build_vocab_from_iterator(data_iter, specials=specials)
     vocab.set_default_index(vocab['<unk>'])
     return vocab
+
 
 word_vocab = build_vocab(train_sentences)
 tag_vocab = build_vocab(train_tags)
@@ -126,6 +131,7 @@ valid_loader = DataLoader(valid_dataset, batch_size=BTACH_SIZE, collate_fn=colla
 import torch.nn as nn
 import math
 
+
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
         super(PositionalEncoding, self).__init__()
@@ -140,6 +146,7 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
+
 
 class TransformerModel(nn.Module):
     def __init__(self, ntoken: int, ntag: int, d_model: int, nhead: int, d_hid: int, nlayers: int, dropout: float):
@@ -171,7 +178,9 @@ class TransformerModel(nn.Module):
         # tag_scores = torch.log_softmax(output, dim=2)
         return output
 
+
 from tqdm import tqdm
+
 
 def train(model, train_loader, optimizer, criterion, device):
     logging.info('TRAINING...')
@@ -181,7 +190,7 @@ def train(model, train_loader, optimizer, criterion, device):
     progress_bar = tqdm(train_loader, desc='Training', leave=True)
 
     for data, targets in progress_bar:
-    # for batch, (data, targets) in enumerate(train_loader, 1):
+        # for batch, (data, targets) in enumerate(train_loader, 1):
         data, targets = data.to(device), targets.to(device)
         optimizer.zero_grad()
         output = model(data)
@@ -194,6 +203,7 @@ def train(model, train_loader, optimizer, criterion, device):
         # log_progress(batch, total, prefix='TRAINING Progress:', suffix='Complete', length=50)
 
     return total_loss / len(train_loader)
+
 
 # def train(model, train_loader, optimizer, criterion, device):
 #     model.train()
@@ -214,12 +224,12 @@ def evaluate(model, valid_loader, criterion, device, tag_vocab):
     total_loss = 0.0
     all_predictions = []
     all_targets = []
-    
+
     with torch.no_grad():
         progress_bar = tqdm(valid_loader, desc='Validating', leave=True)
         total = len(valid_loader)
         for data, targets in progress_bar:
-        # for batch, (data, targets) in enumerate(train_loader, 1):
+            # for batch, (data, targets) in enumerate(train_loader, 1):
             data, targets = data.to(device), targets.to(device)
             output = model(data)
             output = output.view(-1, output.shape[-1])
@@ -263,7 +273,6 @@ def evaluate(model, valid_loader, criterion, device, tag_vocab):
             all_targets.extend(filtered_targets.tolist())
             # log_progress(batch, total, prefix='EVALUATING Progress:', suffix='Complete', length=50)
 
-
     # Calculate metrics
     # accuracy = accuracy_score(all_targets, all_predictions)
     # precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_predictions, average='weighted')
@@ -291,8 +300,6 @@ logging.info(f'device {device}')
 logging.info(f'ntokens {ntokens} ntag{ntag}')
 logging.info(f'd_model{d_model} nhead{nhead} d_hid{d_hid} nlayers{nlayers} dropout{dropout}')
 
-
-
 model = TransformerModel(ntokens, ntag, d_model, nhead, d_hid, nlayers, dropout).to(device)
 criterion = nn.CrossEntropyLoss(ignore_index=tag_vocab['<pad>'])
 optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE)
@@ -300,11 +307,14 @@ optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE)
 # 训练模型
 
 EPOCH = 60
+
+
 def train_and_eval(epoch):
-    for epoch in range(1, epoch+1):
+    for epoch in range(1, epoch + 1):
         train_loss = train(model, train_loader, optimizer, criterion, device)
         val_loss, accuracy, precision, recall, f1 = evaluate(model, valid_loader, criterion, device, tag_vocab)
-        print(f"Epoch {epoch}, Train loss: {train_loss:.2f}, Validation loss: {val_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
+        print(
+            f"Epoch {epoch}, Train loss: {train_loss:.2f}, Validation loss: {val_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
         logging.info(f'Epoch: {epoch:02}')
         logging.info(f'\tTrain Loss: {train_loss:.3f}')
         logging.info(f'\t Eval Loss: {val_loss:.3f}')
@@ -312,5 +322,6 @@ def train_and_eval(epoch):
         logging.info(f'\t precision: {precision:.3f}')
         logging.info(f'\t recall: {recall:.3f}')
         logging.info(f'\t f1: {f1:.3f}')
-        
+
+
 train_and_eval(EPOCH)
