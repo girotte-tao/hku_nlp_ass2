@@ -1,46 +1,13 @@
 from __future__ import absolute_import, division, print_function
-
-import argparse
-import csv
-import json
 import logging
-import os
-import random
-import sys
-import time
-# import truecase
-import re
-import numpy as np
-import torch
 import torch.nn.functional as F
-
-import torch.nn.functional as F
-# from pytorch_transformers import (WEIGHTS_NAME, AdamW, BertConfig,
-#                                   BertForTokenClassification, BertTokenizer,
-#                                   WarmupLinearSchedule)
-from transformers import WEIGHTS_NAME, AdamW, AutoConfig, AutoTokenizer, get_linear_schedule_with_warmup
-from transformers import (PreTrainedModel, AutoModel, AutoConfig)
-
-from torch import nn
-from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
-                              TensorDataset)
-from torch.utils.data.distributed import DistributedSampler
-
+from transformers import AdamW, AutoTokenizer
+from torch.utils.data import TensorDataset
 from tqdm import tqdm, trange
-
 from seqeval.metrics import classification_report
-
-from transformers import (PreTrainedModel, AutoModel, AutoConfig)
-import math
-import random
-import numpy as np
-from transformers import AutoModelWithLMHead
 import torch
-from torch import nn, optim
-from torchtext.vocab import build_vocab_from_iterator
-from torchtext.data.functional import to_map_style_dataset
+from torch import nn
 from torch.utils.data import DataLoader
-from torch.nn.utils.rnn import pad_sequence
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import MultiLabelBinarizer
 
