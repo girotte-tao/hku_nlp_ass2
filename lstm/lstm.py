@@ -105,8 +105,8 @@ def evaluate(model, iterator, criterion, device, label_vocab):
             filtered_predictions = predicted[non_pad_elements]
             filtered_labels = labels[non_pad_elements]
 
-            all_predictions.append(filtered_predictions.tolist())
-            all_labels.append(filtered_labels.tolist())
+            all_predictions.append(label_vocab.lookup_token(index) for index in filtered_predictions.tolist())
+            all_labels.append(label_vocab.lookup_token(index) for index in filtered_labels.tolist())
 
     eval_loss = total_loss / len(iterator)
     accuracy = accuracy_score(all_labels, all_predictions)
