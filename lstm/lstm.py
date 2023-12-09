@@ -4,11 +4,12 @@ from torchtext.vocab import build_vocab_from_iterator
 from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+# from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import logging
 import os
 from datetime import datetime
 import optuna
+from seqeval.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
 
 #  ----- log config -----
 log_dir = "log"
@@ -112,8 +113,8 @@ def evaluate(model, iterator, criterion, device, label_vocab):
     precision = precision_score(all_labels, all_predictions, average='weighted')
     recall = recall_score(all_labels, all_predictions, average='weighted')
     f1 = f1_score(all_labels, all_predictions, average='weighted')
-
-    return eval_loss, accuracy, precision, recall, f1
+    report = classification_report(all_labels, all_predictions)
+    return eval_loss, accuracy, precision, recall, f1, report
 
 
 def train(model, train_loader, optimizer, criterion, device):
@@ -142,7 +143,7 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
     eval_loss, accuracy, precision, recall, f1 = -1, -1, -1, -1, -1
     for epoch in range(n_epochs):
         train_loss = train(model, train_loader, optimizer, criterion, device)
-        eval_loss, accuracy, precision, recall, f1 = evaluate(model, valid_loader, criterion, device, label_vocab)
+        eval_loss, accuracy, precision, recall, f1, report = evaluate(model, valid_loader, criterion, device, label_vocab)
 
         logging.info(f'Epoch: {epoch + 1:02}')
         logging.info(f'\tTrain Loss: {train_loss:.3f}')
@@ -151,6 +152,7 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
         logging.info(f'\t precision: {precision:.3f}')
         logging.info(f'\t recall: {recall:.3f}')
         logging.info(f'\t f1: {f1:.3f}')
+        logging.info(report)
     return f1
 
 
@@ -202,7 +204,6 @@ def objective(trial):
 
 
 def print_trial_info(study, trial):
-    # 打印每次 trial 完成时的信息
     print(f"Trial {trial.number} finished with value: {trial.value} and parameters: {trial.params}.")
     print(f"Best trial so far: Trial {study.best_trial.number}")
     logging.info(f"Trial {trial.number} finished with value: {trial.value} and parameters: {trial.params}.")
