@@ -200,6 +200,11 @@ def objective(trial):
 
     N_EPOCHS = 50
     f1 = train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, N_EPOCHS, device, label_vocab)
+
+    if trial.study.best_trial.number == trial.number:
+        torch.save(model.state_dict(), f"best_model_trial_{trial.number}.pt")
+        print(f"Saved best model from trial {trial.number} with f1: {f1}")
+
     return f1
 
 
