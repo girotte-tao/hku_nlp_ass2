@@ -4,11 +4,10 @@ import torch.nn.functional as F
 from transformers import AdamW, AutoTokenizer
 from torch.utils.data import TensorDataset
 from tqdm import tqdm, trange
-from seqeval.metrics import classification_report
+from seqeval.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import MultiLabelBinarizer
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -285,7 +284,6 @@ def pad_sequences(sequences, max_seq_length):
     return padded_sequences
 
 
-
 def get_label_list(train_data_dir, test_data_dir, dev_data_dir):
     label_set = readfile_label(train_data_dir, test_data_dir, dev_data_dir)
     label_list = []
@@ -397,6 +395,7 @@ def train(model, data_loader, optimizer, criterion, max_grad_norm, num_labels, e
 
     logging.info(f'\tTrain Loss: {train_loss:.3f}')
 
+
 def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels, label_list, epoch_):
     total_loss = 0.0
     logging.info("EVALUATING")
@@ -423,7 +422,6 @@ def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels
         logits = logits.detach().cpu().numpy()
         label_ids = label_ids.to('cpu').numpy()
 
-
         for i, label in enumerate(label_ids):
             print()
             temp_1 = []
@@ -444,17 +442,17 @@ def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels
                         temp_2.append(label_map[logits[i][j]])
                     except:
                         temp_2.append('O')
-    print('y_true', y_true)
-    print('y_pred', y_pred)
-    mlb = MultiLabelBinarizer()
-    y_true_binary = mlb.fit_transform(y_true)
-    y_pred_binary = mlb.transform(y_pred)
+    # print('y_true', y_true)
+    # print('y_pred', y_pred)
+    # mlb = MultiLabelBinarizer()
+    # y_true_binary = mlb.fit_transform(y_true)
+    # y_pred_binary = mlb.transform(y_pred)
 
     eval_loss = total_loss / len(data_loader)
-    accuracy = accuracy_score(y_true_binary, y_pred_binary)
-    precision = precision_score(y_true_binary, y_pred_binary, average='weighted')
-    recall = recall_score(y_true_binary, y_pred_binary, average='weighted')
-    f1 = f1_score(y_true_binary, y_pred_binary, average='weighted')
+    accuracy = accuracy_score(y_true, y_true)
+    precision = precision_score(y_true, y_true, average='weighted')
+    recall = recall_score(y_true, y_true, average='weighted')
+    f1 = f1_score(y_true, y_true, average='weighted')
     print(
         f"Epoch {epoch_}, Validation loss: {eval_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
 
@@ -474,7 +472,7 @@ def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels
     logging.info(f'\t f1: {f1:.3f}')
 
     logging.info("eval report")
-    logging.info(report)
+    logging.info('\n' + report)
 
     output_eval_file = "eval_results.txt"
     with open(output_eval_file, "a") as writer:

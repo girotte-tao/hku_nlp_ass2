@@ -4,7 +4,6 @@ from torchtext.vocab import build_vocab_from_iterator
 from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
-# from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import logging
 import os
 from datetime import datetime
@@ -113,7 +112,7 @@ def evaluate(model, iterator, criterion, device, label_vocab):
     precision = precision_score(all_labels, all_predictions, average='weighted')
     recall = recall_score(all_labels, all_predictions, average='weighted')
     f1 = f1_score(all_labels, all_predictions, average='weighted')
-    report = classification_report(all_labels, all_predictions)
+    report = classification_report(all_labels, all_predictions, digits=4)
     return eval_loss, accuracy, precision, recall, f1, report
 
 
@@ -143,7 +142,8 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
     eval_loss, accuracy, precision, recall, f1 = -1, -1, -1, -1, -1
     for epoch in range(n_epochs):
         train_loss = train(model, train_loader, optimizer, criterion, device)
-        eval_loss, accuracy, precision, recall, f1, report = evaluate(model, valid_loader, criterion, device, label_vocab)
+        eval_loss, accuracy, precision, recall, f1, report = evaluate(model, valid_loader, criterion, device,
+                                                                      label_vocab)
 
         logging.info(f'Epoch: {epoch + 1:02}')
         logging.info(f'\tTrain Loss: {train_loss:.3f}')
@@ -152,7 +152,7 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
         logging.info(f'\t precision: {precision:.3f}')
         logging.info(f'\t recall: {recall:.3f}')
         logging.info(f'\t f1: {f1:.3f}')
-        logging.info(report)
+        logging.info('\n' + report)
     return f1
 
 

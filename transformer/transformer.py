@@ -3,7 +3,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from torchtext.vocab import build_vocab_from_iterator
 import torch.optim as optim
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from seqeval.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
 from torchtext.data.functional import to_map_style_dataset
 import logging
 import os
@@ -174,15 +174,15 @@ def evaluate(model, valid_loader, criterion, device, tag_vocab):
     precision = precision_score(all_targets, all_predictions, average='weighted')
     recall = recall_score(all_targets, all_predictions, average='weighted')
     f1 = f1_score(all_targets, all_predictions, average='weighted')
-
-    return eval_loss, accuracy, precision, recall, f1
+    report = classification_report(all_targets, all_predictions, digits=4)
+    return eval_loss, accuracy, precision, recall, f1, report
 
 
 def train_and_eval(epoch, model, optimizer, criterion, device, train_loader, valid_loader, tag_vocab):
     val_loss, accuracy, precision, recall, f1 = -1, -1, -1, -1, -1
     for epoch in range(1, epoch + 1):
         train_loss = train(model, train_loader, optimizer, criterion, device)
-        val_loss, accuracy, precision, recall, f1 = evaluate(model, valid_loader, criterion, device, tag_vocab)
+        val_loss, accuracy, precision, recall, f1, report = evaluate(model, valid_loader, criterion, device, tag_vocab)
         print(
             f"Epoch {epoch}, Train loss: {train_loss:.2f}, Validation loss: {val_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
         logging.info(f'Epoch: {epoch:02}')
@@ -192,6 +192,7 @@ def train_and_eval(epoch, model, optimizer, criterion, device, train_loader, val
         logging.info(f'\t precision: {precision:.3f}')
         logging.info(f'\t recall: {recall:.3f}')
         logging.info(f'\t f1: {f1:.3f}')
+        logging.info('\n' + report)
     return f1
 
 
