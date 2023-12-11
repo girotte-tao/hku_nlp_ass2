@@ -166,8 +166,8 @@ def evaluate(model, valid_loader, criterion, device, tag_vocab):
             filtered_predictions = predicted[mask]
             filtered_targets = targets[mask]
 
-            all_predictions.extend(filtered_predictions.tolist())
-            all_targets.extend(filtered_targets.tolist())
+            all_predictions.append([tag_vocab.lookup_token(index) for index in filtered_predictions.tolist()])
+            all_targets.append([tag_vocab.lookup_token(index) for index in filtered_targets.tolist()])
 
     eval_loss = total_loss / total
     accuracy = accuracy_score(all_targets, all_predictions)
