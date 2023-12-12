@@ -256,16 +256,16 @@ def main():
     processed_valid_data = process_data(valid_sentences, valid_tags, word_vocab, tag_vocab)
     valid_dataset = to_map_style_dataset(processed_valid_data)
 
-    BATCH_SIZE = 64
+    BATCH_SIZE = 32
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ntokens = len(word_vocab)
     d_model = 512
-    nhead = 8
-    d_hid = 2048
-    nlayers = 6
-    dropout = 0.05
+    nhead = 4
+    d_hid = 1024
+    nlayers = 3
+    dropout = 0.11424641724202106
     ntag = len(tag_vocab)
-    LEARNING_RATE = 0.1
+    LEARNING_RATE = 0.0879668405212036
 
     def collate_batch(batch):
         word_list, tag_list = zip(*batch)
@@ -286,7 +286,7 @@ def main():
 
     EPOCH = 60
     train_and_eval(EPOCH, model, optimizer, criterion, device, train_loader, valid_loader, tag_vocab)
-
+    torch.save(model, 'model.pth')
 
 if __name__ == "__main__":
     do_trail = False
