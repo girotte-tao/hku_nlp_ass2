@@ -153,7 +153,53 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
         logging.info(f'\t recall: {recall:.3f}')
         logging.info(f'\t f1: {f1:.3f}')
         logging.info('\n' + report)
+    torch.save(model, 'model.pth')
     return f1
+
+
+def predict(model, iterator, criterion, device, label_vocab, sentences):
+    with open('3036197122.lstm.test.txt', 'w') as f:
+        model.eval()
+        total_loss = 0
+        all_predictions = []
+        all_labels = []
+
+        with torch.no_grad():
+            for text, labels in iterator:
+
+                text, labels = text.to(device), labels.to(device)
+                predictions = model(text)
+                predictions = predictions.view(-1, predictions.shape[-1])
+                labels = labels.view(-1)
+                text = text.view(-1)
+
+                loss = criterion(predictions, labels)
+                total_loss += loss.item()
+
+                _, predicted = torch.max(predictions, dim=1)
+
+                non_pad_elements = labels != label_vocab['<pad>']
+                filtered_text = text[non_pad_elements]
+                filtered_predictions = predicted[non_pad_elements]
+                filtered_labels = labels[non_pad_elements]
+
+                predictions = [label_vocab.lookup_token(index) for index in filtered_predictions.tolist()]
+                labels = [label_vocab.lookup_token(index) for index in filtered_labels.tolist()]
+
+                all_predictions.append(predictions)
+                all_labels.append(labels)
+
+                for sentence_index in range(len(sentences)):
+                    for word_index in sentences[sentence_index]:
+                        f.write(filtered_text[word_index] + '\t' + predictions[sentence_index][word_index] + '\n')
+
+        eval_loss = total_loss / len(iterator)
+        accuracy = accuracy_score(all_labels, all_predictions)
+        precision = precision_score(all_labels, all_predictions, average='weighted')
+        recall = recall_score(all_labels, all_predictions, average='weighted')
+        f1 = f1_score(all_labels, all_predictions, average='weighted')
+        report = classification_report(all_labels, all_predictions, digits=4)
+        return eval_loss, accuracy, precision, recall, f1, report
 
 
 # trial to find the best parameters
@@ -228,14 +274,14 @@ def main():
     valid_sentences, valid_labels = load_data("../conll2003/valid.txt")
 
     # define hyperparameters
-    BATCH_SIZE = 64
-    LEARNING_RATE = 0.01
+    BATCH_SIZE = 16
+    LEARNING_RATE = 0.00032
     INPUT_DIM = len(word_vocab)
-    EMBEDDING_DIM = 100
-    HIDDEN_DIM = 256
+    EMBEDDING_DIM = 56
+    HIDDEN_DIM = 364
     OUTPUT_DIM = len(label_vocab)
-    NUM_LAYERS = 4
-    DROPOUT_RATE = 0.2
+    NUM_LAYERS = 3
+    DROPOUT_RATE = 0.4
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     logging.info(f'BATCH_SIZE {BATCH_SIZE}, HIDDEN_DIM {HIDDEN_DIM}, NUM_LAYERS {NUM_LAYERS}')
@@ -266,11 +312,31 @@ def main():
 
 if __name__ == "__main__":
     do_trial = False
-    if do_trial:
-        logging.info('DO TRIAL...')
-        study = optuna.create_study(direction="maximize")
-        study.optimize(objective, n_trials=20, callbacks=[print_trial_info])
+    do_prediction = False
 
-        print(study.best_params)
+    if do_prediction:
+        model = torch.load('model.pth')
+        sentences, labels = load_data("../conll2003/test.txt")
+        word_vocab = build_vocab(sentences)
+        label_vocab = build_vocab(labels)
+        BATCH_SIZE = 64
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        def collate_batch(batch):
+            text_list, label_list = zip(*batch)
+            text_list = pad_sequence(text_list, padding_value=word_vocab['<pad>'])
+            label_list = pad_sequence(label_list, padding_value=label_vocab['<pad>'])
+            return text_list, label_list
+        test_loader = DataLoader(to_map_style_dataset(process_data(sentences, labels, word_vocab, label_vocab)),
+                                  batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_batch)
+        criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
+
+        predict(model, test_loader, criterion, device, label_vocab, sentences)
     else:
-        main()
+        if do_trial:
+            logging.info('DO TRIAL...')
+            study = optuna.create_study(direction="maximize")
+            study.optimize(objective, n_trials=20, callbacks=[print_trial_info])
+
+            print(study.best_params)
+        else:
+            main()
