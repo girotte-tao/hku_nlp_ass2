@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 import optuna
 from seqeval.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
+import matplotlib.pyplot as plt
 
 #  ----- log config -----
 log_dir = "log"
@@ -148,11 +149,22 @@ def train(model, train_loader, optimizer, criterion, device):
 
 def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, n_epochs, device, label_vocab):
     eval_loss, accuracy, precision, recall, f1 = -1, -1, -1, -1, -1
+    train_losses = []
+    eval_losses = []
+    accuracies = []
+    precisions = []
+    recalls = []
+    f1_scores =[]
     for epoch in range(n_epochs):
         train_loss = train(model, train_loader, optimizer, criterion, device)
         eval_loss, accuracy, precision, recall, f1, report = evaluate(model, valid_loader, criterion, device,
                                                                       label_vocab)
-
+        train_losses.append(train_loss)
+        eval_losses.append(eval_loss)
+        accuracies.append(accuracy)
+        precisions.append(precision)
+        recalls.append(recall)
+        f1_scores.append(f1)
         logging.info(f'Epoch: {epoch + 1:02}')
         logging.info(f'\tTrain Loss: {train_loss:.3f}')
         logging.info(f'\t Eval Loss: {eval_loss:.3f}')
@@ -161,6 +173,56 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
         logging.info(f'\t recall: {recall:.3f}')
         logging.info(f'\t f1: {f1:.3f}')
         logging.info('\n' + report)
+    
+
+    plt.figure(figsize=(15, 10))
+
+    # 绘制训练损失
+    plt.subplot(3, 2, 1)
+    plt.plot(train_losses, label='Train Loss')
+    plt.title('Train Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+
+    # 绘制评估损失
+    plt.subplot(3, 2, 2)
+    plt.plot(eval_losses, label='Eval Loss')
+    plt.title('Eval Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+
+    # 绘制准确率
+    plt.subplot(3, 2, 3)
+    plt.plot(accuracies, label='Accuracy')
+    plt.title('Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+
+    # 绘制精确度
+    plt.subplot(3, 2, 4)
+    plt.plot(precisions, label='Precision')
+    plt.title('Precision')
+    plt.xlabel('Epoch')
+    plt.ylabel('Precision')
+
+    # 绘制召回率
+    plt.subplot(3, 2, 5)
+    plt.plot(recalls, label='Recall')
+    plt.title('Recall')
+    plt.xlabel('Epoch')
+    plt.ylabel('Recall')
+
+    # 绘制F1得分
+    plt.subplot(3, 2, 6)
+    plt.plot(f1_scores, label='F1 Score')
+    plt.title('F1 Score')
+    plt.xlabel('Epoch')
+    plt.ylabel('F1 Score')
+
+    plt.tight_layout()
+    plt.savefig('training_metrics.png')
+    plt.close()
+    
     torch.save(model, 'model.pth')
     return f1
 

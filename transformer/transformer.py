@@ -208,9 +208,9 @@ def objective(trial):
     LEARNING_RATE = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
     d_model = trial.suggest_categorical("d_model", [256, 512, 1024])
     nhead = trial.suggest_categorical("nhead", [4, 8, 16])
-    d_hid = trial.suggest_categorical("d_hid", [1024, 2048, 4096])
-    nlayers = trial.suggest_int("nlayers", 2, 10)
-    dropout = trial.suggest_float("dropout", 0.1, 0.5)
+    d_hid = trial.suggest_categorical("d_hid", [1024, 512, 256])
+    nlayers = trial.suggest_int("nlayers", 2, 8)
+    dropout = trial.suggest_float("dropout", 0.1, 0.3)
     BATCH_SIZE = trial.suggest_categorical("batch_size", [16, 32, 64, 128])
 
     logging.info(f'device {device}')
