@@ -10,3 +10,4 @@ optional/eval_results.txt
 
 *.pth
 
+*.test.txt
