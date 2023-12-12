@@ -13,6 +13,7 @@ import optuna
 import torch.nn as nn
 import math
 import matplotlib.pyplot as plt
+torch.manual_seed(98)
 
 #  ----- log config -----
 log_dir = "log"
@@ -442,7 +443,7 @@ def main():
 if __name__ == "__main__":
     do_trail = False
     do_prediction = True
-    do_train = True
+    do_train = False
 
     if do_prediction:
         do_predict()

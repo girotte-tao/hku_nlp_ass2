@@ -11,6 +11,8 @@ import optuna
 from seqeval.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
 import matplotlib.pyplot as plt
 
+torch.manual_seed(98)
+
 #  ----- log config -----
 log_dir = "log"
 if not os.path.exists(log_dir):
@@ -222,7 +224,7 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
     plt.tight_layout()
     plt.savefig('training_metrics.png')
     plt.close()
-    
+
     torch.save(model, 'model.pth')
     return f1
 
@@ -420,9 +422,9 @@ def do_predict():
 
 if __name__ == "__main__":
     do_trial = False
-    do_prediction = False
+    do_prediction = True
     do_eval = False
-    do_train = True
+    do_train = False
 
     if do_prediction:
         do_predict()
