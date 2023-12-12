@@ -165,7 +165,7 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
     return f1
 
 
-def predict(model, iterator, criterion, device, label_vocab, sentences, batch_size, lines):
+def predict(model, iterator, criterion, device, label_vocab, sentences, lines):
     with open('3036197122.lstm.test.txt', 'w') as f:
         model.eval()
         total_loss = 0
@@ -173,7 +173,6 @@ def predict(model, iterator, criterion, device, label_vocab, sentences, batch_si
         all_predictions_ex = []
         all_words_ex = [word for sentence in sentences for word in sentence]
         all_labels = []
-        batch_index = 0
         line_cnt = len(lines)
 
         with torch.no_grad():
@@ -182,7 +181,6 @@ def predict(model, iterator, criterion, device, label_vocab, sentences, batch_si
                 predictions = model(text)
                 predictions = predictions.view(-1, predictions.shape[-1])
                 labels = labels.view(-1)
-                text = text.view(-1)
 
                 loss = criterion(predictions, labels)
                 total_loss += loss.item()
@@ -332,45 +330,49 @@ def main():
     N_EPOCHS = 50
     train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, N_EPOCHS, device, label_vocab)
 
+def do_predict():
+    model = torch.load('model.pth')
+    sentences, labels = load_data("../conll2003/train.txt")
+    word_vocab = build_vocab(sentences)
+    label_vocab = build_vocab(labels)
+    test_sentences, test_labels = load_data("../conll2003/test.txt")
+    lines = load_data_lines("../conll2003/test.txt")
+
+    BATCH_SIZE = 64
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    def collate_batch(batch):
+        text_list, label_list = zip(*batch)
+        text_list = pad_sequence(text_list, padding_value=word_vocab['<pad>'])
+        label_list = pad_sequence(label_list, padding_value=label_vocab['<pad>'])
+        return text_list, label_list
+
+    test_loader = DataLoader(to_map_style_dataset(process_data(test_sentences, test_labels, word_vocab, label_vocab)),
+                             batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
+    criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
+    predict(model, test_loader,
+            criterion,
+            device, label_vocab,
+            test_sentences, lines)
+
 
 if __name__ == "__main__":
     do_trial = False
-    do_prediction = True
+    do_prediction = False
+    do_eval = False
+    do_train = True
 
     if do_prediction:
-        model = torch.load('model.pth')
-        sentences, labels = load_data("../conll2003/test.txt")
-        lines = load_data_lines("../conll2003/test.txt")
+        do_predict()
 
-        word_vocab = build_vocab(sentences)
-        label_vocab = build_vocab(labels)
-        BATCH_SIZE = 64
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        epochs = len(sentences) // BATCH_SIZE
-        rest = len(sentences) % BATCH_SIZE
+    if do_eval:
+        main()
 
+    if do_trial:
+        logging.info('DO TRIAL...')
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=20, callbacks=[print_trial_info])
+        print(study.best_params)
 
-        def collate_batch(batch):
-            text_list, label_list = zip(*batch)
-            text_list = pad_sequence(text_list, padding_value=word_vocab['<pad>'])
-            label_list = pad_sequence(label_list, padding_value=label_vocab['<pad>'])
-            return text_list, label_list
-
-
-        test_loader = DataLoader(to_map_style_dataset(process_data(sentences, labels, word_vocab, label_vocab)),
-                                 batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
-        criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
-        eval_loss, accuracy, precision, recall, f1, report, batch_predictions = predict(model, test_loader,
-                                                                                        criterion,
-                                                                                        device, label_vocab,
-                                                                                        sentences, BATCH_SIZE, lines)
-
-    else:
-        if do_trial:
-            logging.info('DO TRIAL...')
-            study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20, callbacks=[print_trial_info])
-
-            print(study.best_params)
-        else:
-            main()
+    if do_train:
+        main()
