@@ -47,6 +47,14 @@ def load_data(file_path):
     return sentences, labels
 
 
+# Load dataset
+def load_data_lines(file_path):
+    with open(file_path, encoding='utf-8') as file:
+        lines = file.readlines()
+
+    return lines
+
+
 def build_vocab(data_iter):
     specials = ['<unk>', '<pad>']
     vocab = build_vocab_from_iterator(data_iter, specials=specials)
@@ -157,17 +165,16 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
     return f1
 
 
-def predict(model, iterator, criterion, device, label_vocab, sentences, batch_size):
-
+def predict(model, iterator, criterion, device, label_vocab, sentences, batch_size, lines):
     with open('3036197122.lstm.test.txt', 'w') as f:
-        f.write('-DOCSTART- -X- -X- O' + '\n')
-        f.write('\n')
-
         model.eval()
         total_loss = 0
         all_predictions = []
+        all_predictions_ex = []
+        all_words_ex = [word for sentence in sentences for word in sentence]
         all_labels = []
         batch_index = 0
+        line_cnt = len(lines)
 
         with torch.no_grad():
             for text, labels in iterator:
@@ -183,7 +190,6 @@ def predict(model, iterator, criterion, device, label_vocab, sentences, batch_si
                 _, predicted = torch.max(predictions, dim=1)
 
                 non_pad_elements = labels != label_vocab['<pad>']
-                filtered_text = text[non_pad_elements]
                 filtered_predictions = predicted[non_pad_elements]
                 filtered_labels = labels[non_pad_elements]
 
@@ -193,38 +199,29 @@ def predict(model, iterator, criterion, device, label_vocab, sentences, batch_si
                 all_predictions.append(predictions)
                 all_labels.append(labels)
 
-                pred_index = 0
-                # logging.info(len(predictions))
-                logging.info(f'batch_index {batch_index}')
-                if (batch_index + 1) * batch_size > len(sentences):
-                    batch_sentences = sentences[batch_index * batch_size:]
-                else:
-                    batch_sentences = sentences[batch_index * batch_size: (batch_index + 1) * batch_size]
-                    logging.info(f'batch_sentences {len(batch_sentences)}')
-                cnt = 0
-                for i in batch_sentences:
-                    for j in i:
-                        cnt+=1
-                logging.info(f'words len {cnt}')
-                logging.info(f'predictions len {len(predictions)}')
+                all_predictions_ex.extend(predictions)
 
+        line_index = 0
+        word_index = 0
+        while line_index < line_cnt:
+            if lines[line_index].startswith("-DOCSTART-") or lines[line_index] == "\n":
+                f.write(lines[line_index])
+                line_index += 1
+            else:
+                line_info = lines[line_index].strip().split()
 
-                for sentence_index in range(len(batch_sentences)):
-                    for word_index in range(len(batch_sentences[sentence_index])):
-                        # logging.info(f'pred_index{pred_index}, sentence_index{sentence_index}, word_index{word_index}')
-                        logging.info(f'word {sentence_index} {word_index} {batch_sentences[sentence_index][word_index]}')
-                        logging.info(f'pred_index {pred_index} {predictions[pred_index]}')
-                        f.write(batch_sentences[sentence_index][word_index] + '\t' + predictions[pred_index] + '\n')
-                        pred_index += 1
-                    f.write('\n')
-                batch_index += 1
-
+                logging.info(f'{line_info[0]}, {all_words_ex[word_index]}  word_index{word_index}')
+                assert line_info[0] == all_words_ex[word_index]
+                f.write(f'{line_info[0]} {line_info[1]} {line_info[2]} {all_predictions_ex[word_index]}\n')
+                word_index += 1
+                line_index += 1
         eval_loss = total_loss / len(iterator)
         accuracy = accuracy_score(all_labels, all_predictions)
         precision = precision_score(all_labels, all_predictions, average='weighted')
         recall = recall_score(all_labels, all_predictions, average='weighted')
         f1 = f1_score(all_labels, all_predictions, average='weighted')
         report = classification_report(all_labels, all_predictions, digits=4)
+        logging.info(report)
         return eval_loss, accuracy, precision, recall, f1, report, all_predictions
 
 
@@ -343,6 +340,8 @@ if __name__ == "__main__":
     if do_prediction:
         model = torch.load('model.pth')
         sentences, labels = load_data("../conll2003/test.txt")
+        lines = load_data_lines("../conll2003/test.txt")
+
         word_vocab = build_vocab(sentences)
         label_vocab = build_vocab(labels)
         BATCH_SIZE = 64
@@ -361,11 +360,10 @@ if __name__ == "__main__":
         test_loader = DataLoader(to_map_style_dataset(process_data(sentences, labels, word_vocab, label_vocab)),
                                  batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
         criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
-
         eval_loss, accuracy, precision, recall, f1, report, batch_predictions = predict(model, test_loader,
                                                                                         criterion,
                                                                                         device, label_vocab,
-                                                                                        sentences, BATCH_SIZE)
+                                                                                        sentences, BATCH_SIZE, lines)
 
     else:
         if do_trial:
