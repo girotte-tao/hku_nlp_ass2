@@ -12,6 +12,7 @@ from tqdm import tqdm
 import optuna
 import torch.nn as nn
 import math
+import matplotlib.pyplot as plt
 
 #  ----- log config -----
 log_dir = "log"
@@ -180,9 +181,21 @@ def evaluate(model, valid_loader, criterion, device, tag_vocab):
 
 def train_and_eval(epoch, model, optimizer, criterion, device, train_loader, valid_loader, tag_vocab):
     val_loss, accuracy, precision, recall, f1 = -1, -1, -1, -1, -1
+    train_losses = []
+    eval_losses = []
+    accuracies = []
+    precisions = []
+    recalls = []
+    f1_scores =[]
     for epoch in range(1, epoch + 1):
         train_loss = train(model, train_loader, optimizer, criterion, device)
         val_loss, accuracy, precision, recall, f1, report = evaluate(model, valid_loader, criterion, device, tag_vocab)
+        train_losses.append(train_loss)
+        eval_losses.append(val_loss)
+        accuracies.append(accuracy)
+        precisions.append(precision)
+        recalls.append(recall)
+        f1_scores.append(f1)
         print(
             f"Epoch {epoch}, Train loss: {train_loss:.2f}, Validation loss: {val_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
         logging.info(f'Epoch: {epoch:02}')
@@ -193,6 +206,55 @@ def train_and_eval(epoch, model, optimizer, criterion, device, train_loader, val
         logging.info(f'\t recall: {recall:.3f}')
         logging.info(f'\t f1: {f1:.3f}')
         logging.info('\n' + report)
+
+    plt.figure(figsize=(15, 10))
+
+    # 绘制训练损失
+    plt.subplot(3, 2, 1)
+    plt.plot(train_losses, label='Train Loss')
+    plt.title('Train Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+
+    # 绘制评估损失
+    plt.subplot(3, 2, 2)
+    plt.plot(eval_losses, label='Eval Loss')
+    plt.title('Eval Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+
+    # 绘制准确率
+    plt.subplot(3, 2, 3)
+    plt.plot(accuracies, label='Accuracy')
+    plt.title('Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+
+    # 绘制精确度
+    plt.subplot(3, 2, 4)
+    plt.plot(precisions, label='Precision')
+    plt.title('Precision')
+    plt.xlabel('Epoch')
+    plt.ylabel('Precision')
+
+    # 绘制召回率
+    plt.subplot(3, 2, 5)
+    plt.plot(recalls, label='Recall')
+    plt.title('Recall')
+    plt.xlabel('Epoch')
+    plt.ylabel('Recall')
+
+    # 绘制F1得分
+    plt.subplot(3, 2, 6)
+    plt.plot(f1_scores, label='F1 Score')
+    plt.title('F1 Score')
+    plt.xlabel('Epoch')
+    plt.ylabel('F1 Score')
+
+    plt.tight_layout()
+    plt.savefig('training_metrics.png')
+    plt.close()
+
     return f1
 
 
@@ -232,9 +294,98 @@ def objective(trial):
     criterion = nn.CrossEntropyLoss(ignore_index=tag_vocab['<pad>'])
     optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE)
 
-    EPOCH = 60
+    EPOCH = 50
     f1 = train_and_eval(EPOCH, model, optimizer, criterion, device, train_loader, valid_loader, tag_vocab)
     return f1
+
+def load_data_lines(file_path):
+    with open(file_path, encoding='utf-8') as file:
+        lines = file.readlines()
+
+    return lines
+
+def predict(model, iterator, criterion, device, label_vocab, sentences, lines):
+    with open('3036197122.transformer.test.txt', 'w') as f:
+        model.eval()
+        total_loss = 0
+        all_predictions = []
+        all_predictions_ex = []
+        all_words_ex = [word for sentence in sentences for word in sentence]
+        all_labels = []
+        line_cnt = len(lines)
+
+        with torch.no_grad():
+            for text, labels in iterator:
+                text, labels = text.to(device), labels.to(device)
+                predictions = model(text)
+                predictions = predictions.view(-1, predictions.shape[-1])
+                labels = labels.view(-1)
+
+                loss = criterion(predictions, labels)
+                total_loss += loss.item()
+
+                _, predicted = torch.max(predictions, dim=1)
+
+                non_pad_elements = labels != label_vocab['<pad>']
+                filtered_predictions = predicted[non_pad_elements]
+                filtered_labels = labels[non_pad_elements]
+
+                predictions = [label_vocab.lookup_token(index) for index in filtered_predictions.tolist()]
+                labels = [label_vocab.lookup_token(index) for index in filtered_labels.tolist()]
+
+                all_predictions.append(predictions)
+                all_labels.append(labels)
+
+                all_predictions_ex.extend(predictions)
+
+        line_index = 0
+        word_index = 0
+        while line_index < line_cnt:
+            if lines[line_index].startswith("-DOCSTART-") or lines[line_index] == "\n":
+                f.write(lines[line_index])
+                line_index += 1
+            else:
+                line_info = lines[line_index].strip().split()
+
+                logging.info(f'{line_info[0]}, {all_words_ex[word_index]}  word_index{word_index}')
+                assert line_info[0] == all_words_ex[word_index]
+                f.write(f'{line_info[0]} {line_info[1]} {line_info[2]} {all_predictions_ex[word_index]}\n')
+                word_index += 1
+                line_index += 1
+        eval_loss = total_loss / len(iterator)
+        accuracy = accuracy_score(all_labels, all_predictions)
+        precision = precision_score(all_labels, all_predictions, average='weighted')
+        recall = recall_score(all_labels, all_predictions, average='weighted')
+        f1 = f1_score(all_labels, all_predictions, average='weighted')
+        report = classification_report(all_labels, all_predictions, digits=4)
+        logging.info(report)
+        return eval_loss, accuracy, precision, recall, f1, report, all_predictions
+
+def do_predict():
+    model = torch.load('model.pth')
+    sentences, labels = load_data("../conll2003/train.txt")
+    word_vocab = build_vocab(sentences)
+    label_vocab = build_vocab(labels)
+    test_sentences, test_labels = load_data("../conll2003/test.txt")
+    lines = load_data_lines("../conll2003/test.txt")
+
+    BATCH_SIZE = 64
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    def collate_batch(batch):
+        text_list, label_list = zip(*batch)
+        text_list = pad_sequence(text_list, padding_value=word_vocab['<pad>'])
+        label_list = pad_sequence(label_list, padding_value=label_vocab['<pad>'])
+        return text_list, label_list
+
+    test_loader = DataLoader(to_map_style_dataset(process_data(test_sentences, test_labels, word_vocab, label_vocab)),
+                             batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_batch)
+    criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
+    predict(model, test_loader,
+            criterion,
+            device, label_vocab,
+            test_sentences, lines)
+
 
 
 def print_trial_info(study, trial):
@@ -290,11 +441,17 @@ def main():
 
 if __name__ == "__main__":
     do_trail = False
+    do_prediction = True
+    do_train = True
+
+    if do_prediction:
+        do_predict()
+
     if do_trail:
         logging.info('DO TRIAL...')
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=20, callbacks=[print_trial_info])
 
         print(study.best_params)
-    else:
+    if do_train:
         main()
