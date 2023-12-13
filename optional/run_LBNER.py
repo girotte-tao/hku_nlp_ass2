@@ -9,11 +9,12 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import MultiLabelBinarizer
+import matplotlib.pyplot as plt
 
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                    datefmt='%m/%d/%Y %H:%M:%S',
-                    level=logging.INFO)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+#                     datefmt='%m/%d/%Y %H:%M:%S',
+#                     level=logging.INFO)
+# logger = logging.getLogger(__name__)
 
 from LBNER_win import LBNER
 
@@ -32,6 +33,7 @@ log_file_path = os.path.join(log_dir, log_file_name)
 logging.basicConfig(filename=log_file_path, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
+logging.info('START')
 
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
@@ -394,6 +396,7 @@ def train(model, data_loader, optimizer, criterion, max_grad_norm, num_labels, e
     train_loss = total_train_loss / len(data_loader)
 
     logging.info(f'\tTrain Loss: {train_loss:.3f}')
+    return train_loss
 
 
 def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels, label_list, epoch_):
@@ -457,8 +460,8 @@ def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels
         f"Epoch {epoch_}, Validation loss: {eval_loss:.2f}, Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}")
 
     report = classification_report(y_true, y_pred, digits=4)
-    logger.info("\n******evaluate on the dev data*******")
-    logger.info("\n%s", report)
+    logging.info("\n******evaluate on the dev data*******")
+    logging.info("\n%s", report)
     print("report")
     print(report)
     temp = report.split('\n')[-3]
@@ -484,9 +487,74 @@ def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels
         writer.write(f'\t f1: {f1:.3f}' + '\n')
         writer.write(report + '\n')
 
+    return eval_loss, accuracy, precision, recall, f1, report
+
 
 if __name__ == "__main__":
+    train_losses = []
+    eval_losses = []
+    accuracies = []
+    precisions = []
+    recalls = []
+    f1_scores =[]
     for epoch_ in trange(EPOCH, desc="Epoch"):
         logging.info(f'Epoch: {epoch_ + 1:02}')
-        train(model, train_dataloader, optimizer, criterion, max_grad_norm, num_labels, epoch_)
-        evaluate(model, eval_dataloader, optimizer, criterion, max_grad_norm, num_labels, label_list, epoch_)
+        train_loss = train(model, train_dataloader, optimizer, criterion, max_grad_norm, num_labels, epoch_)
+        eval_loss, accuracy, precision, recall, f1, report = evaluate(model, eval_dataloader, optimizer, criterion, max_grad_norm, num_labels, label_list, epoch_)
+        train_losses.append(train_loss)
+        eval_losses.append(eval_loss)
+        accuracies.append(accuracy)
+        precisions.append(precision)
+        recalls.append(recall)
+        f1_scores.append(f1)
+
+        plt.figure(figsize=(15, 10))
+
+        # 绘制训练损失
+        plt.subplot(3, 2, 1)
+        plt.plot(train_losses, label='Train Loss')
+        plt.title('Train Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+
+        # 绘制评估损失
+        plt.subplot(3, 2, 2)
+        plt.plot(eval_losses, label='Eval Loss')
+        plt.title('Eval Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+
+        # 绘制准确率
+        plt.subplot(3, 2, 3)
+        plt.plot(accuracies, label='Accuracy')
+        plt.title('Accuracy')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+
+        # 绘制精确度
+        plt.subplot(3, 2, 4)
+        plt.plot(precisions, label='Precision')
+        plt.title('Precision')
+        plt.xlabel('Epoch')
+        plt.ylabel('Precision')
+
+        # 绘制召回率
+        plt.subplot(3, 2, 5)
+        plt.plot(recalls, label='Recall')
+        plt.title('Recall')
+        plt.xlabel('Epoch')
+        plt.ylabel('Recall')
+
+        # 绘制F1得分
+        plt.subplot(3, 2, 6)
+        plt.plot(f1_scores, label='F1 Score')
+        plt.title('F1 Score')
+        plt.xlabel('Epoch')
+        plt.ylabel('F1 Score')
+
+        plt.tight_layout()
+        plt.savefig(f'training_metrics{epoch_}.png')
+        plt.close()
+
+        torch.save(model, f'model{epoch_}.pth')
+

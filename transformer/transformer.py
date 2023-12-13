@@ -342,7 +342,7 @@ def predict(model, iterator, criterion, device, label_vocab, sentences, lines):
         line_index = 0
         word_index = 0
         while line_index < line_cnt:
-            if lines[line_index].startswith("-DOCSTART-") or lines[line_index] == "\n":
+            if lines[line_index] == "\n":
                 f.write(lines[line_index])
                 line_index += 1
             else:
@@ -370,7 +370,7 @@ def do_predict():
     test_sentences, test_labels = load_data("../conll2003/test.txt")
     lines = load_data_lines("../conll2003/test.txt")
 
-    BATCH_SIZE = 64
+    BATCH_SIZE = 32
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def collate_batch(batch):
