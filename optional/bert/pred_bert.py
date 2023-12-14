@@ -151,16 +151,6 @@ for sent in sents:
         print(sent)
         break
 
-with open("logs/compare.txt","w") as f:
-    for i in range(len(sents)):
-        f.write(" ".join(str(input_ids[i]))+"\n")
-        f.write(" ".join(input_sents[i])+"\n")
-        f.write(" ".join(sents[i])+"\n")
-        f.write(" ".join(pred_tags[i])+"\n")
-        f.write(" ".join(test_tags[i])+"\n")
-
-        f.write("\n")
-        f.write("**************************\n")
 
 if __name__ == "__main__":
     print("*****************starting to write to file*****************")
