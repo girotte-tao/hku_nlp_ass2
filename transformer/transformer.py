@@ -306,7 +306,7 @@ def load_data_lines(file_path):
     return lines
 
 def predict(model, iterator, criterion, device, label_vocab, sentences, lines):
-    with open('3036197122.transformer.test.txt', 'w') as f:
+    with open('3036197122.transformer.test1.txt', 'w') as f:
         model.eval()
         total_loss = 0
         all_predictions = []

@@ -13,3 +13,7 @@ optional/eval_results.txt
 *.test.txt
 
 *.png
+
+*.pt
+
+*.pth

@@ -225,12 +225,12 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
     plt.savefig('training_metrics.png')
     plt.close()
 
-    torch.save(model, 'model.pth')
+    torch.save(model, 'model_lstm.pth')
     return f1
 
 
 def predict(model, iterator, criterion, device, label_vocab, sentences, lines):
-    with open('3036197122.lstm.test.txt', 'w') as f:
+    with open('3036197122.lstm.test1.txt', 'w') as f:
         model.eval()
         total_loss = 0
         all_predictions = []
@@ -272,7 +272,7 @@ def predict(model, iterator, criterion, device, label_vocab, sentences, lines):
             else:
                 line_info = lines[line_index].strip().split()
 
-                logging.info(f'{line_info[0]}, {all_words_ex[word_index]}  word_index{word_index}')
+                # logging.info(f'{line_info[0]}, {all_words_ex[word_index]}  word_index{word_index}')
                 assert line_info[0] == all_words_ex[word_index]
                 f.write(f'{line_info[0]} {line_info[1]} {line_info[2]} {all_predictions_ex[word_index]}\n')
                 word_index += 1
@@ -325,7 +325,7 @@ def objective(trial):
 
     # DEFINING MODEL
     model = LSTMTagger(INPUT_DIM, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, NUM_LAYERS, DROPOUT_RATE,
-                       bidirectional=True).to(device)
+                       bidirectional=False).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss(ignore_index=label_vocab['<pad>'])
 
@@ -395,7 +395,7 @@ def main():
     train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, N_EPOCHS, device, label_vocab)
 
 def do_predict():
-    model = torch.load('model.pth')
+    model = torch.load('model_lstm.pth')
     sentences, labels = load_data("../conll2003/train.txt")
     word_vocab = build_vocab(sentences)
     label_vocab = build_vocab(labels)
