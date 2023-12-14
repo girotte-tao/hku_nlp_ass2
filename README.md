@@ -2,6 +2,8 @@
 
 This README provides instructions for training and predicting Named Entity Recognition (NER) using LSTM, Transformer, LBNER, and BertTagger models.
 
+Github: https://github.com/girotte-tao/hku_nlp_ass2
+
 ## Environment
 
 The project uses conda to build the environment.
@@ -23,14 +25,15 @@ To train the models, follow the instructions specific to each model:
 
 1. Navigate to the optional/lbner directory.
 2. Run the run_LBNER.py file to train the LBNER model:
+   ```bash
    python run_LBNER.py
 
 ### BertTagger
 
 1. Navigate to the optional/bert directory.
 2. Run the train.py file to train the BertTagger model:
+   ```bash
    python train.py
-
 
 ## Prediction
 
@@ -38,7 +41,8 @@ To train the models, follow the instructions specific to each model:
 
 To predict with the LSTM, Transformer, and LBNER models, modify the if __name__ == "__main__" section in their respective files by changing do_train to do_predict:
 
-if __name__ == "__main__":
+if `__name__` == `"__main__"`:
+    
     do_predict == True
     do_train == False
 
