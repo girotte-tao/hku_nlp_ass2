@@ -489,88 +489,87 @@ def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels
 
     return eval_loss, accuracy, precision, recall, f1, report
 
+def do_predict():
+    pass
 
-def do_eval(epoch):
+def main():
+    train_losses = []
+    eval_losses = []
+    accuracies = []
+    precisions = []
+    recalls = []
+    f1_scores =[]
+    for epoch_ in trange(EPOCH, desc="Epoch"):
+        logging.info(f'Epoch: {epoch_ + 1:02}')
+        train_loss = train(model, train_dataloader, optimizer, criterion, max_grad_norm, num_labels, epoch_)
+        eval_loss, accuracy, precision, recall, f1, report = evaluate(model, eval_dataloader, optimizer, criterion, max_grad_norm, num_labels, label_list, epoch_)
+        train_losses.append(train_loss)
+        eval_losses.append(eval_loss)
+        accuracies.append(accuracy)
+        precisions.append(precision)
+        recalls.append(recall)
+        f1_scores.append(f1)
 
-    # train_losses = [0.293, 0.162, 0.119, 0.102, 0.081, 0.069, 0.061, 0.056]
-    # eval_losses = [0.196, 0.162, 0.153, 0.158, 0.160, 0.157, 0.153, 0.164 ]
-    # accuracies = [0.837, 0.843, 0.849, 0.856, 0.858, 0.862, 0.865, 0.865]
-    # precisions = [0.6227, 0.6710, 0.712, 0.7327, 0.7388, 0.7585, 0.7703, 0.7621]
-    # recalls = [0.7028, 0.7408, 0.7460, 0.7674, 0.7529, 0.7583, 0.7649, 0.7560]
-    # f1_scores =[0.6583, 0.7035, 0.7259, 0.7487, 0.7448, 0.7551, 0.7671, 0.7583 ]
+        plt.figure(figsize=(15, 10))
 
-    model = torch.load(f'model6.pth')
+        # 绘制训练损失
+        plt.subplot(3, 2, 1)
+        plt.plot(train_losses, label='Train Loss')
+        plt.title('Train Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
 
-    eval_loss, accuracy, precision, recall, f1, report = evaluate(model, eval_dataloader, optimizer, criterion, max_grad_norm, num_labels, label_list, 0)
+        # 绘制评估损失
+        plt.subplot(3, 2, 2)
+        plt.plot(eval_losses, label='Eval Loss')
+        plt.title('Eval Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+
+        # 绘制准确率
+        plt.subplot(3, 2, 3)
+        plt.plot(accuracies, label='Accuracy')
+        plt.title('Accuracy')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+
+        # 绘制精确度
+        plt.subplot(3, 2, 4)
+        plt.plot(precisions, label='Precision')
+        plt.title('Precision')
+        plt.xlabel('Epoch')
+        plt.ylabel('Precision')
+
+        # 绘制召回率
+        plt.subplot(3, 2, 5)
+        plt.plot(recalls, label='Recall')
+        plt.title('Recall')
+        plt.xlabel('Epoch')
+        plt.ylabel('Recall')
+
+        # 绘制F1得分
+        plt.subplot(3, 2, 6)
+        plt.plot(f1_scores, label='F1 Score')
+        plt.title('F1 Score')
+        plt.xlabel('Epoch')
+        plt.ylabel('F1 Score')
+
+        plt.tight_layout()
+        plt.savefig(f'training_metrics{epoch_}.png')
+        plt.close()
+
+        torch.save(model, f'model{epoch_}.pth')
+
+
 
 
 
 if __name__ == "__main__":
-    do_eval(8)
-    # train_losses = []
-    # eval_losses = []
-    # accuracies = []
-    # precisions = []
-    # recalls = []
-    # f1_scores =[]
-    # for epoch_ in trange(EPOCH, desc="Epoch"):
-    #     logging.info(f'Epoch: {epoch_ + 1:02}')
-    #     train_loss = train(model, train_dataloader, optimizer, criterion, max_grad_norm, num_labels, epoch_)
-    #     eval_loss, accuracy, precision, recall, f1, report = evaluate(model, eval_dataloader, optimizer, criterion, max_grad_norm, num_labels, label_list, epoch_)
-    #     train_losses.append(train_loss)
-    #     eval_losses.append(eval_loss)
-    #     accuracies.append(accuracy)
-    #     precisions.append(precision)
-    #     recalls.append(recall)
-    #     f1_scores.append(f1)
+    do_train = True
+    do_predict = False
 
-    #     plt.figure(figsize=(15, 10))
+    if do_train:
+        main()
 
-    #     # 绘制训练损失
-    #     plt.subplot(3, 2, 1)
-    #     plt.plot(train_losses, label='Train Loss')
-    #     plt.title('Train Loss')
-    #     plt.xlabel('Epoch')
-    #     plt.ylabel('Loss')
-
-    #     # 绘制评估损失
-    #     plt.subplot(3, 2, 2)
-    #     plt.plot(eval_losses, label='Eval Loss')
-    #     plt.title('Eval Loss')
-    #     plt.xlabel('Epoch')
-    #     plt.ylabel('Loss')
-
-    #     # 绘制准确率
-    #     plt.subplot(3, 2, 3)
-    #     plt.plot(accuracies, label='Accuracy')
-    #     plt.title('Accuracy')
-    #     plt.xlabel('Epoch')
-    #     plt.ylabel('Accuracy')
-
-    #     # 绘制精确度
-    #     plt.subplot(3, 2, 4)
-    #     plt.plot(precisions, label='Precision')
-    #     plt.title('Precision')
-    #     plt.xlabel('Epoch')
-    #     plt.ylabel('Precision')
-
-    #     # 绘制召回率
-    #     plt.subplot(3, 2, 5)
-    #     plt.plot(recalls, label='Recall')
-    #     plt.title('Recall')
-    #     plt.xlabel('Epoch')
-    #     plt.ylabel('Recall')
-
-    #     # 绘制F1得分
-    #     plt.subplot(3, 2, 6)
-    #     plt.plot(f1_scores, label='F1 Score')
-    #     plt.title('F1 Score')
-    #     plt.xlabel('Epoch')
-    #     plt.ylabel('F1 Score')
-
-    #     plt.tight_layout()
-    #     plt.savefig(f'training_metrics{epoch_}.png')
-    #     plt.close()
-
-    #     torch.save(model, f'model{epoch_}.pth')
-
+    if do_predict:
+        do_predict()
