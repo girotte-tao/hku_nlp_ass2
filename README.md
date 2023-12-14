@@ -2,6 +2,11 @@
 
 This README provides instructions for training and predicting Named Entity Recognition (NER) using LSTM, Transformer, LBNER, and BertTagger models.
 
+## Environment
+
+The project uses conda to build the environment.
+Please use the environment.yml file to build the environment.
+
 ## Training Models
 
 To train the models, follow the instructions specific to each model:
@@ -44,6 +49,7 @@ Please do training before do prediction because model files will be loaded when 
 For the Bert model, run the following command for prediction:
 
 
-## Prediction
+## Log
 
 To see logs, please turn to the log directory of the respective model directories.
+For log of BERT, the last log of the report in the train log is the report on the test dataset.
