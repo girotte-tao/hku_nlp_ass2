@@ -338,16 +338,27 @@ train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_l
                            all_seq_lens)
 
 eval_examples = ner_processor.get_dev_examples(dev_data_dir)
+test_examples = ner_processor.get_dev_examples(test_data_dir)
+
 eval_features, _ = convert_examples_to_features(eval_examples, label_list, max_seq_length, tokenizer)
+
+test_features, _ = convert_examples_to_features(test_examples, label_list, max_seq_length, tokenizer)
+
 all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids, all_seq_lens = create_tensors(
     eval_features)
 eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids,
                           all_seq_lens)
 
+all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids, all_seq_lens = create_tensors(
+    test_features)
+test_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_valid_ids, all_lmask_ids,
+                          all_seq_lens)
 EPOCH = 20
 
 train_dataloader = DataLoader(train_data, batch_size=batch_size)
 eval_dataloader = DataLoader(eval_data, batch_size=batch_size)
+test_dataloader = DataLoader(test_data, batch_size=batch_size)
+
 
 param_optimizer = list(model.named_parameters())
 no_decay = ['bias', 'LayerNorm.weight']
@@ -488,9 +499,106 @@ def evaluate(model, data_loader, optimizer, criterion, max_grad_norm, num_labels
         writer.write(report + '\n')
 
     return eval_loss, accuracy, precision, recall, f1, report
+def load_data_lines(file_path):
+    with open(file_path, encoding='utf-8') as file:
+        lines = file.readlines()
 
-def do_predict():
-    pass
+    return lines
+
+def load_data(file_path):
+    """
+      a sentence is the first word of each line before seeing a blank line
+      same for label but is the forth word
+    """
+    with open(file_path, encoding='utf-8') as file:
+        lines = file.readlines()
+
+    sentences, labels = [], []
+    sentence, sentence_labels = [], []
+    for line in lines:
+        if line.startswith("-DOCSTART-") or line == "\n":
+            if sentence:
+                sentences.append(sentence)
+                labels.append(sentence_labels)
+                sentence, sentence_labels = [], []
+        else:
+            parts = line.split()
+            sentence.append(parts[0])
+            sentence_labels.append(parts[-1])
+
+    return sentences, labels
+def predict():
+    model = torch.load('model.pth')
+    data_loader = test_dataloader
+    lines = load_data_lines("../../conll2003/test.txt")
+    model.eval()
+    y_true = []
+    y_pred = []
+    test_sentences, test_labels = load_data("../../conll2003/test.txt")
+
+    all_words_ex = [word for sentence in test_sentences for word in sentence]
+    all_predictions_ex = []
+    with open('3036197122.lstm.lbner.txt', 'w') as f:
+        label_map = {i: label for i, label in enumerate(label_list, 1)}
+        for step, batch in enumerate(tqdm(data_loader, desc="Evaluation")):
+            input_ids, input_mask, segment_ids, label_ids, valid_ids, l_mask, seq_len = batch
+            input_ids = input_ids.to(device)
+            input_mask = input_mask.to(device)
+            segment_ids = segment_ids.to(device)
+            valid_ids = valid_ids.to(device)
+            label_ids = label_ids.to(device)
+            l_mask = l_mask.to(device)
+            seq_len = seq_len.to(device)
+            with torch.no_grad():
+                logits = model(input_ids, segment_ids, input_mask, valid_ids=valid_ids)
+                loss = get_loss(criterion, label_ids, l_mask, logits, num_labels)
+            logits = torch.argmax(F.log_softmax(logits, dim=2), dim=2)
+            logits = logits.detach().cpu().numpy()
+            label_ids = label_ids.to('cpu').numpy()
+
+            for i, label in enumerate(label_ids):
+                print()
+                temp_1 = []
+                temp_2 = []
+
+                for j, m in enumerate(label):
+                    if j == 0:
+                        continue
+                    elif label_ids[i][j] == len(label_map):
+                        y_true.append(temp_1)
+
+                        y_pred.append(temp_2)
+                        all_predictions_ex.extend(y_pred)
+                        break
+                    else:
+
+                        temp_1.append(label_map[label_ids[i][j]])
+                        try:
+                            temp_2.append(label_map[logits[i][j]])
+                        except:
+                            temp_2.append('O')
+        line_cnt = len(lines)
+        line_index = 0
+        word_index = 0
+        while line_index < line_cnt:
+            if lines[line_index].startswith("-DOCSTART-") or lines[line_index] == "\n":
+                f.write(lines[line_index])
+                line_index += 1
+            else:
+                line_info = lines[line_index].strip().split()
+
+                # logging.info(f'{line_info[0]}, {all_words_ex[word_index]}  word_index{word_index}')
+                assert line_info[0] == all_words_ex[word_index]
+                f.write(f'{line_info[0]} {line_info[1]} {line_info[2]} {all_predictions_ex[word_index]}\n')
+                word_index += 1
+                line_index += 1
+
+
+
+
+        report = classification_report(y_true, y_pred, digits=4)
+        logging.info("\n******evaluate on the test data*******")
+        logging.info("\n%s", report)
 
 def main():
     train_losses = []
@@ -572,4 +680,4 @@ if __name__ == "__main__":
         main()
 
     if do_predict:
-        do_predict()
+        predict()

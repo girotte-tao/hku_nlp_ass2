@@ -230,7 +230,7 @@ def train_and_evaluate(model, train_loader, valid_loader, optimizer, criterion, 
 
 
 def predict(model, iterator, criterion, device, label_vocab, sentences, lines):
-    with open('3036197122.lstm.test1.txt', 'w') as f:
+    with open('3036197122.lstm.test.txt', 'w') as f:
         model.eval()
         total_loss = 0
         all_predictions = []
